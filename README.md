@@ -45,8 +45,9 @@ git clone https://github.com/Jimmygplus/LaunchGrid && cd LaunchGrid
 ./build.sh                 # -> build/LaunchGrid.app for this Mac
 open build/LaunchGrid.app
 ```
-Xcode 15.3 or later (Swift 5.10+). `./build.sh --release` makes the universal, signed and notarized DMG; it needs a
-Developer ID certificate and a `notarytool` keychain profile (see the comments at the top of `build.sh`).
+Xcode 15.3 or later (Swift 5.10+). `./scripts/release.sh` makes the universal, signed and notarized DMG; it needs a
+Developer ID certificate and a `notarytool` keychain profile, named in environment variables. See
+[docs/distribution.md](docs/distribution.md), which also covers checking a published release.
 
 ## Tests
 ```bash
