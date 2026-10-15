@@ -91,9 +91,9 @@ verify_signature() {
   case "$info" in *"Timestamp="*) ;; *) die "$path: signature has no secure timestamp." ;; esac
   if [ "${path%.app}" != "$path" ]; then
     case "$info" in *"(runtime)"*) ;; *) die "$path: signature is missing the hardened runtime." ;; esac
-    if codesign --display --entitlements - --xml "$path" 2>/dev/null | grep -q get-task-allow; then
-      die "$path: has the get-task-allow entitlement; notarization would reject it."
-    fi
+    case "$(codesign --display --entitlements - --xml "$path" 2>/dev/null)" in *get-task-allow*)
+      die "$path: has the get-task-allow entitlement; notarization would reject it." ;;
+    esac
   fi
   printf '%s\n' "$info" | grep -E '^(Authority=Developer ID Application|TeamIdentifier|Timestamp)' | sed 's/^/    /'
 }

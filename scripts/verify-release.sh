@@ -46,8 +46,9 @@ fi
 xattr -w com.apple.quarantine "0081;$(printf '%x' "$(date +%s)");Safari;" "$work/$dmg_name"
 
 codesign --verify --strict "$work/$dmg_name" || die "DMG signature is invalid"
-codesign --display --verbose=4 "$work/$dmg_name" 2>&1 | grep -q "Authority=Developer ID Application:" \
-  || die "DMG is not signed with a Developer ID"
+# Capture first: `grep -q` exits on the first match, and under pipefail codesign's SIGPIPE would fail the pipe.
+dmg_info="$(codesign --display --verbose=4 "$work/$dmg_name" 2>&1)"
+case "$dmg_info" in *"Authority=Developer ID Application:"*) ;; *) die "DMG is not signed with a Developer ID" ;; esac
 xcrun stapler validate -q "$work/$dmg_name" || die "DMG has no stapled notarization ticket"
 spctl --assess --type open --context context:primary-signature "$work/$dmg_name" 2>/dev/null \
   || die "Gatekeeper rejects the DMG"
