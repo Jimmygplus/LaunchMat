@@ -51,13 +51,13 @@ struct RootView: View {
                         }
                         .scaleEffect(1.1)
                         .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
-                        .position(d.location)
+                        .position(x: d.location.x - d.grab.width, y: d.location.y - d.grab.height)
                         .allowsHitTesting(false)
                 } else if let d = model.drag, let id = d.sourceFolder {
                     EntryIcon(model: model, entry: d.entry, size: model.folderPanel(for: id).iconSize)
                         .scaleEffect(1.1)
                         .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
-                        .position(d.location)
+                        .position(x: d.location.x - d.grab.width, y: d.location.y - d.grab.height)
                         .allowsHitTesting(false)
                 }
             }
@@ -180,14 +180,14 @@ struct PagerView: View {
                 ForEach(Array(model.results.enumerated()), id: \.element.id) { i, app in
                     let page = i / model.capacity, slot = i % model.capacity
                     let p = metrics.cellCenter(slot)
-                    EntryCell(model: model, entry: .app(app.id), metrics: metrics,
+                    EntryCell(model: model, entry: .app(app.id), metrics: metrics, center: p,
                               selected: page == model.currentPage && slot == model.selection)
                         .position(x: p.x + CGFloat(page) * w, y: p.y)
                 }
             } else {
                 ForEach(model.placedEntries) { item in
                     let p = metrics.cellCenter(item.slot)
-                    EntryCell(model: model, entry: item.entry, metrics: metrics,
+                    EntryCell(model: model, entry: item.entry, metrics: metrics, center: p,
                               selected: item.page == model.currentPage && item.slot == model.selection)
                         .position(x: p.x + CGFloat(item.page) * w, y: p.y)
                 }
@@ -209,10 +209,26 @@ struct PagerSlide<Content: View>: View {
     }
 }
 
+/// How a press on an icon is read: moving 4 pt from the press (any direction) drags it; releasing without having
+/// dragged, within the icon's frame widened by 6 pt left and right and 2 pt up and down, is a click.
+enum IconPress {
+    static let dragStart: CGFloat = 4
+
+    static func isDrag(_ v: DragGesture.Value) -> Bool {
+        hypot(v.translation.width, v.translation.height) >= dragStart
+    }
+
+    static func isClick(_ v: DragGesture.Value, frame: CGRect) -> Bool {
+        frame.insetBy(dx: -6, dy: -2).contains(v.location)
+    }
+}
+
 struct EntryCell: View {
     @ObservedObject var model: LaunchpadModel
     let entry: Entry
     let metrics: GridMetrics
+    /// The cell's centre in the root coordinate space while its page is showing.
+    let center: CGPoint
     let selected: Bool
 
     var body: some View {
@@ -220,6 +236,8 @@ struct EntryCell: View {
         let isDragged = d?.entry == entry && (d?.sourceFolder == nil || d?.extracted == true)
         let merging = model.mergeTarget == entry
         let picked = model.selected.contains(entry)
+        let size = CGSize(width: metrics.cell.width * 0.94, height: metrics.contentHeight + 12)
+        let frame = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
         VStack(spacing: metrics.labelSpacing) {
             EntryIcon(model: model, entry: entry, size: metrics.iconSize)
                 .background(
@@ -253,11 +271,20 @@ struct EntryCell: View {
         )
         .opacity(isDragged ? 0 : (entry.appPath.map(model.isInstalled) == false ? 0.4 : 1))
         .contentShape(Rectangle())
-        .onTapGesture { model.tap(entry) }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 6, coordinateSpace: .named("root"))
-                .onChanged { model.dragChanged(entry, at: $0.location) }
-                .onEnded { _ in model.dragEnded() }
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .named("root"))
+                .onChanged { v in
+                    guard model.drag != nil || IconPress.isDrag(v) else { return }
+                    let icon = CGPoint(x: center.x, y: center.y - (metrics.contentHeight - metrics.iconSize) / 2)
+                    model.dragChanged(entry, at: v.location, grabbedAt: v.startLocation, iconCenter: icon, iconSize: metrics.iconSize)
+                }
+                .onEnded { v in
+                    if model.drag != nil {
+                        model.dragEnded()
+                    } else if IconPress.isClick(v, frame: frame) {
+                        model.tap(entry)
+                    }
+                }
         )
         .contextMenu { EntryMenu(model: model, entry: entry, folder: nil) }
     }
@@ -400,7 +427,7 @@ struct FolderOverlay: View {
                 .position(x: panel.frame.midX, y: panel.frame.minY + panel.header * 0.55)
 
             ForEach(Array(apps.enumerated()), id: \.element) { i, path in
-                FolderAppCell(model: model, path: path, folderID: folderID, panel: panel)
+                FolderAppCell(model: model, path: path, folderID: folderID, panel: panel, center: panel.center(i))
                     .position(panel.center(i))
             }
         }
@@ -413,9 +440,13 @@ struct FolderAppCell: View {
     let path: String
     let folderID: UUID
     let panel: FolderPanel
+    let center: CGPoint
 
     var body: some View {
         let dragged = model.drag?.entry == .app(path) && model.drag?.sourceFolder == folderID
+        let font = max(11, min(14, panel.iconSize * 0.12))
+        let size = CGSize(width: panel.cell.width * 0.94, height: panel.iconSize + 6 + font * 1.3)
+        let frame = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
         VStack(spacing: 6) {
             AppIconImage(image: model.icons[path], size: panel.iconSize)
                 .overlay(alignment: .topLeading) {
@@ -425,18 +456,28 @@ struct FolderAppCell: View {
                 }
                 .modifier(Jiggle(active: model.optionHeld))
             Text(model.title(for: .app(path)))
-                .font(.system(size: max(11, min(14, panel.iconSize * 0.12)), weight: .medium))
+                .font(.system(size: font, weight: .medium))
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .frame(width: panel.cell.width * 0.94)
         }
         .opacity(dragged ? 0 : 1)
         .contentShape(Rectangle())
-        .onTapGesture { model.tap(.app(path), inFolder: true) }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 6, coordinateSpace: .named("root"))
-                .onChanged { model.folderDragChanged(path, folder: folderID, at: $0.location) }
-                .onEnded { _ in model.dragEnded() }
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .named("root"))
+                .onChanged { v in
+                    guard model.drag != nil || IconPress.isDrag(v) else { return }
+                    let icon = CGPoint(x: center.x, y: center.y - (size.height - panel.iconSize) / 2)
+                    model.folderDragChanged(path, folder: folderID, at: v.location, grabbedAt: v.startLocation,
+                                            iconCenter: icon, iconSize: panel.iconSize)
+                }
+                .onEnded { v in
+                    if model.drag != nil {
+                        model.dragEnded()
+                    } else if IconPress.isClick(v, frame: frame) {
+                        model.tap(.app(path), inFolder: true)
+                    }
+                }
         )
         .contextMenu { EntryMenu(model: model, entry: .app(path), folder: folderID) }
     }

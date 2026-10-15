@@ -11,6 +11,15 @@ struct DragState: Equatable {
     var extracted = false
     /// Other selected items carried along in a multi-drag (removed from the grid while dragging).
     var companions: [Entry] = []
+    /// Where the icon was grabbed, from its centre: the floating icon keeps this offset from the pointer.
+    var grab: CGSize = .zero
+
+    /// The grab point relative to the icon's centre, kept within the icon.
+    static func grab(at start: CGPoint, iconCenter: CGPoint, iconSize: CGFloat) -> CGSize {
+        let half = iconSize / 2
+        return CGSize(width: min(half, max(-half, start.x - iconCenter.x)),
+                      height: min(half, max(-half, start.y - iconCenter.y)))
+    }
 }
 
 /// NSImage is not Sendable; icons are created off the main thread and only read afterwards.
@@ -701,10 +710,12 @@ final class LaunchpadModel: ObservableObject {
 
     // MARK: - Drag & drop (main grid)
 
-    func dragChanged(_ entry: Entry, at loc: CGPoint) {
+    func dragChanged(_ entry: Entry, at loc: CGPoint, grabbedAt start: CGPoint? = nil,
+                     iconCenter: CGPoint? = nil, iconSize: CGFloat = 0) {
         guard !isSearching else { return }
         if drag == nil {
             var state = DragState(entry: entry, location: loc)
+            if let start, let iconCenter { state.grab = DragState.grab(at: start, iconCenter: iconCenter, iconSize: iconSize) }
             if selected.contains(entry), selected.count > 1 {
                 // The other selected items ride along: lift them out of the grid now, put them back on drop.
                 let order = layout.pages.flatMap { $0 }
@@ -883,12 +894,17 @@ final class LaunchpadModel: ObservableObject {
         return FolderPanel(frame: frame, cols: cols, cell: cell, iconSize: metrics.iconSize * scale, header: header, pad: pad)
     }
 
-    func folderDragChanged(_ path: String, folder: UUID, at loc: CGPoint) {
+    func folderDragChanged(_ path: String, folder: UUID, at loc: CGPoint, grabbedAt start: CGPoint? = nil,
+                           iconCenter: CGPoint? = nil, iconSize: CGFloat = 0) {
         if let d = drag, d.extracted {
             dragChanged(d.entry, at: loc)
             return
         }
-        if drag == nil { drag = DragState(entry: .app(path), location: loc, sourceFolder: folder) }
+        if drag == nil {
+            var state = DragState(entry: .app(path), location: loc, sourceFolder: folder)
+            if let start, let iconCenter { state.grab = DragState.grab(at: start, iconCenter: iconCenter, iconSize: iconSize) }
+            drag = state
+        }
         drag?.location = loc
         let panel = folderPanel(for: folder)
         if !panel.frame.insetBy(dx: -20, dy: -20).contains(loc) {
