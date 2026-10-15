@@ -117,7 +117,8 @@ final class LaunchpadModel: ObservableObject {
     /// Mouse wheel: smallest delta that counts, and the shortest time between two page turns.
     private static let wheelThreshold: CGFloat = 1.0
     private static let wheelInterval: TimeInterval = 0.5
-    private static let reflowSpring = Animation.spring(response: 0.3, dampingFraction: 0.82)
+    /// Icons making room, and other layout changes, move over 0.36 s, easing in and out.
+    private static let reflow = Animation.easeInOut(duration: 0.36)
 
     /// The showing page and the swipe offset. Kept out of the model's published state, so turning pages and
     /// following the fingers move the pager without re-evaluating every icon.
@@ -422,7 +423,7 @@ final class LaunchpadModel: ObservableObject {
     }
 
     func hideSelected() {
-        withAnimation(Self.reflowSpring) {
+        withAnimation(Self.reflow) {
             for path in selectedApps { layout.hide(path) }
             layout.compact()
             selected.removeAll()
@@ -436,7 +437,7 @@ final class LaunchpadModel: ObservableObject {
         guard apps.count >= 2 else { return }
         let name = apps.compactMap { self.apps[$0]?.category }.first ?? "Untitled"
         var id: UUID?
-        withAnimation(Self.reflowSpring) {
+        withAnimation(Self.reflow) {
             id = layout.group(apps: apps, name: name, capacity: capacity)
             layout.compact()
             selected.removeAll()
@@ -470,7 +471,7 @@ final class LaunchpadModel: ObservableObject {
         imported.hidden = layout.hidden
         let sorted = apps.values.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         imported.reconcile(installed: sorted.map(\.id), capacity: capacity)
-        withAnimation(Self.reflowSpring) {
+        withAnimation(Self.reflow) {
             layout = imported
             currentPage = 0
             selected.removeAll()
@@ -519,7 +520,7 @@ final class LaunchpadModel: ObservableObject {
     }
 
     func hide(_ path: String) {
-        withAnimation(Self.reflowSpring) {
+        withAnimation(Self.reflow) {
             layout.hide(path)
             layout.compact()
             currentPage = min(currentPage, pageCount - 1)
@@ -530,7 +531,7 @@ final class LaunchpadModel: ObservableObject {
     }
 
     func removeFromFolder(_ path: String, folder id: UUID) {
-        withAnimation(Self.reflowSpring) {
+        withAnimation(Self.reflow) {
             layout.folders[id]?.apps.removeAll { $0 == path }
             layout.insert(.app(path), page: currentPage, index: layout.pages[currentPage].count, capacity: capacity)
             if (layout.folders[id]?.apps.count ?? 0) < 2 { openFolder = nil }
@@ -771,7 +772,7 @@ final class LaunchpadModel: ObservableObject {
                 // The other selected items ride along: lift them out of the grid now, put them back on drop.
                 let order = layout.pages.flatMap { $0 }
                 state.companions = order.filter { selected.contains($0) && $0 != entry }
-                withAnimation(Self.reflowSpring) {
+                withAnimation(Self.reflow) {
                     for c in state.companions { layout.remove(c) }
                 }
             }
@@ -809,7 +810,7 @@ final class LaunchpadModel: ObservableObject {
             let last = layout.pages[currentPage].count - 1
             if loc.index == min(idx, last) { return }
         }
-        withAnimation(Self.reflowSpring) {
+        withAnimation(Self.reflow) {
             layout.move(entry, page: currentPage, index: idx, capacity: capacity)
         }
     }
@@ -904,7 +905,7 @@ final class LaunchpadModel: ObservableObject {
         if !d.companions.isEmpty { selected.removeAll() }
 
         suppressTapUntil = Date().addingTimeInterval(0.25)
-        withAnimation(Self.reflowSpring) {
+        withAnimation(Self.reflow) {
             layout = l
             drag = nil
             mergeTarget = nil
@@ -964,7 +965,7 @@ final class LaunchpadModel: ObservableObject {
             drag?.extracted = true
             let pageCount = currentPage < layout.pages.count ? layout.pages[currentPage].count : 0
             let slot = min(metrics.slot(at: loc) ?? pageCount, pageCount)
-            withAnimation(Self.reflowSpring) {
+            withAnimation(Self.reflow) {
                 layout.insert(.app(path), page: currentPage, index: slot, capacity: capacity)
             }
             return
@@ -975,6 +976,6 @@ final class LaunchpadModel: ObservableObject {
         guard from != to else { return }
         f.apps.remove(at: from)
         f.apps.insert(path, at: to)
-        withAnimation(Self.reflowSpring) { layout.folders[folder] = f }
+        withAnimation(Self.reflow) { layout.folders[folder] = f }
     }
 }
