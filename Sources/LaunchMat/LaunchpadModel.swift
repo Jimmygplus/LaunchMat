@@ -542,6 +542,7 @@ final class LaunchpadModel: ObservableObject {
             if e.phase.contains(.began) {
                 swipeAccum = 0
                 swipeVertical = nil
+                FrameLog.shared.begin("track", seconds: 1.0)
             }
             if e.phase.contains(.began) || e.phase.contains(.changed) {
                 // The pages move with the fingers whether or not natural scrolling is on.

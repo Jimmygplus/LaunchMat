@@ -84,6 +84,25 @@ enum FrameBench {
         controller.show()
         wait(1.0)
         if model.pageCount > 1 {
+            // The first turns of this process: next, back, next again. If only the first stutters, the cost is
+            // drawing the neighbouring page for the first time.
+            let probeStart = FrameLog.shared.records.count
+            var forward: CGFloat = -1
+            swipe(model, dx: forward * 120)
+            wait(0.9)
+            if model.currentPage == 0 {
+                forward = -forward
+                swipe(model, dx: forward * 120)
+                wait(0.9)
+            }
+            swipe(model, dx: -forward * 120)
+            wait(0.9)
+            swipe(model, dx: forward * 120)
+            wait(0.9)
+            let probe = FrameLog.shared.records[probeStart...].filter { $0.label == "page" || $0.label == "track" }
+            print("fps probe (track = fingers moving, page = settling), first turns in order:")
+            for r in probe { print(String(format: "  probe %@: longest %.1f ms, dropped %d", r.label, r.maxGap * 1000, r.dropped)) }
+
             // Whichever way a synthetic swipe turns the page, turn back when it stops moving.
             var direction: CGFloat = -1
             for _ in 0..<10 {
@@ -107,7 +126,7 @@ enum FrameBench {
 
         print("fps summary (median of runs; dropped = frames over 1.5 refresh intervals; hitch ratio = ms late per s):")
         let byLabel = Dictionary(grouping: FrameLog.shared.records, by: \.label)
-        for label in ["open", "close", "page"] {
+        for label in ["open", "close", "track", "page"] {
             guard let runs = byLabel[label], !runs.isEmpty else { continue }
             func median(_ xs: [Double]) -> Double { let s = xs.sorted(); return s[s.count / 2] }
             let ratio = runs.map(\.hitch).reduce(0, +) / max(0.001, runs.map(\.duration).reduce(0, +)) * 1000
