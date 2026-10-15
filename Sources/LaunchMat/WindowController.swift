@@ -15,6 +15,8 @@ final class LaunchWindowController: NSObject {
     private(set) var isVisible = false
     private var generation = 0
     private var monitors: [Any] = []
+    /// The app's main menu (the one under the menu bar icon), opened by a right-click on blank space.
+    var mainMenu: (() -> NSMenu)?
 
     init(model: LaunchpadModel) {
         self.model = model
@@ -55,6 +57,19 @@ final class LaunchWindowController: NSObject {
             let handled = MainActor.assumeIsolated { () -> Bool in
                 guard let self, self.isVisible else { return false }
                 return self.model.handleKey(e)
+            }
+            return handled ? nil : event
+        } as Any)
+        monitors.append(NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            nonisolated(unsafe) let e = event
+            let handled = MainActor.assumeIsolated { () -> Bool in
+                guard let self, self.isVisible, e.window === self.window, self.model.openFolder == nil,
+                      let view = self.window.contentView, let menu = self.mainMenu?() else { return false }
+                let p = view.convert(e.locationInWindow, from: nil)
+                let root = CGPoint(x: p.x, y: view.isFlipped ? p.y : view.bounds.height - p.y)
+                guard self.model.isBlank(at: root) else { return false } // icons keep their own menu
+                menu.popUp(positioning: nil, at: p, in: view)
+                return true
             }
             return handled ? nil : event
         } as Any)

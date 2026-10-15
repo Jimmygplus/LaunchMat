@@ -580,6 +580,23 @@ final class LaunchpadModel: ObservableObject {
         withTransaction(t) { pager.x = Paging.follow(d, width: metrics.size.width) }
     }
 
+    /// True when a point (root coordinates) is on blank space of the showing page: not on an icon's column and not
+    /// on the search field. Right-clicking there opens the main menu.
+    func isBlank(at p: CGPoint) -> Bool {
+        let m = metrics
+        let searchWidth = min(280, m.size.width * 0.3)
+        let search = CGRect(x: (m.size.width - searchWidth) / 2, y: m.topInset * 0.5 - 15, width: searchWidth, height: 30)
+        if search.contains(p) { return false }
+        let count = isSearching ? max(0, min(capacity, results.count - currentPage * capacity))
+            : (currentPage < layout.pages.count ? layout.pages[currentPage].count : 0)
+        for slot in 0..<count {
+            let frame = IconPress.frame(center: m.cellCenter(slot), iconSize: m.iconSize, cellWidth: m.cell.width * 0.94,
+                                        height: m.contentHeight + 12)
+            if frame.contains(p) { return false }
+        }
+        return true
+    }
+
     /// A press on a blank part of the grid. It turns into a page drag once it has moved 4 pt sideways (up and down
     /// don't count); from then on the pages follow the pointer like a swipe.
     func blankDragChanged(_ t: CGSize) {

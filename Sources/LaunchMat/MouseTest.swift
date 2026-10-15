@@ -98,6 +98,12 @@ enum MouseTest {
               abs(grab.width - 15) < 0.5 && abs(grab.height - 10) < 0.5)
         check("icon: a drag doesn't open anything", launched.isEmpty)
 
+        // Right-click: blank space opens the main menu, icons and the search field keep theirs.
+        check("right-click target: margin, gap and empty slot are blank, an icon and the search field are not",
+              model.isBlank(at: margin) && model.isBlank(at: gap) && model.isBlank(at: m.iconCenter(model.capacity - 1))
+              == (model.layout.pages[0].count < model.capacity)
+              && !model.isBlank(at: m.iconCenter(0)) && !model.isBlank(at: CGPoint(x: m.size.width / 2, y: m.topInset * 0.5)))
+
         let blankClickVisible = controller.isVisible
         press(margin, by: .zero, steps: 1)
         check("margin: a click on blank space closes the grid", blankClickVisible && !controller.isVisible)

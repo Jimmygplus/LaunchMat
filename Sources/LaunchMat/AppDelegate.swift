@@ -36,6 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.load()
         model.prepareWallpapers()
         controller = LaunchWindowController(model: model)
+        controller.mainMenu = { [weak self] in
+            let menu = NSMenu()
+            menu.delegate = self
+            return menu
+        }
         setUpStatusItem()
         installEditMenu()
         registerHotkey()
