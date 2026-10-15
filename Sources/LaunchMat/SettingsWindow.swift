@@ -10,7 +10,8 @@ protocol AppActions: AnyObject {
     func setHotCorner(_ corner: HotCorner)
     func setPinch(_ fingers: PinchFingers)
     func setLaunchAtLogin(_ on: Bool)
-    func importLegacyLayout()
+    /// Returns true when a layout was imported.
+    @discardableResult func importLegacyLayout() -> Bool
     func confirmResetLayout()
     func revealLayoutFile()
     func openAccessibilitySettings()
@@ -255,7 +256,7 @@ enum SettingsSnapshot {
         func setHotCorner(_ corner: HotCorner) {}
         func setPinch(_ fingers: PinchFingers) {}
         func setLaunchAtLogin(_ on: Bool) {}
-        func importLegacyLayout() {}
+        func importLegacyLayout() -> Bool { false }
         func confirmResetLayout() {}
         func revealLayoutFile() {}
         func openAccessibilitySettings() {}

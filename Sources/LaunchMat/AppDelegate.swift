@@ -27,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if args.contains("--mouse-test") {
             MouseTest.run(model: model)
         }
+        if let i = args.firstIndex(of: "--snapshot-guide"), i + 1 < args.count {
+            GuideSnapshot.run(dir: args[i + 1])
+        }
         if let i = args.firstIndex(of: "--snapshot-settings"), i + 1 < args.count {
             SettingsSnapshot.run(model: model, dir: args[i + 1])
         }
@@ -36,6 +39,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         RenameMigration.runOnce(supportDir: support, newName: "LaunchMat")
+        // A fresh install (no layout yet, also none carried over from LaunchGrid) starts with the welcome guide.
+        let freshInstall = !FileManager.default.fileExists(atPath: LaunchpadModel.layoutURL.path)
+            && !UserDefaults.standard.bool(forKey: GuideWindowController.seenKey)
         model.load()
         model.prepareWallpapers()
         controller = LaunchWindowController(model: model)
@@ -48,7 +54,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pinch.onPinchIn = { [weak self] in self?.controller.show() }
         pinch.onPinchOut = { [weak self] in self?.controller.hide() }
         startPinch(prompt: false)
-        if !args.contains("--background") { controller.show() }
+        if freshInstall && !args.contains("--background") {
+            showGuide()
+        } else if !args.contains("--background") {
+            controller.show()
+        }
         DispatchQueue.main.async { [weak self] in self?.offerToRemoveOldApp() }
     }
 
@@ -215,7 +225,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private lazy var settings = SettingsWindowController(model: model, actions: self, showGuide: nil)
+    private lazy var settings = SettingsWindowController(model: model, actions: self, showGuide: { [weak self] in self?.showGuide() })
+    private lazy var guide: GuideWindowController = {
+        let guide = GuideWindowController(model: model, actions: self)
+        guide.onFinish = { [weak self] in self?.controller.show() }
+        return guide
+    }()
+
+    /// The welcome guide; the grid closes first (it sits above every window).
+    func showGuide() {
+        controller.hide()
+        settings.close()
+        guide.show()
+    }
 
     @objc private func showGrid() { controller.show() }
     @objc private func showSettings() {
@@ -255,7 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
 // MARK: - Settings actions
 
-extension AppDelegate: AppActions {
+extension AppDelegate: AppActions, GuideActions {
     func setHotkey(_ choice: HotkeyChoice) {
         Settings.hotkey = choice
         registerHotkey()
@@ -312,14 +334,14 @@ extension AppDelegate: AppActions {
         if alert.runModal() == .alertFirstButtonReturn { model.resetLayout() }
     }
 
-    func importLegacyLayout() {
+    @discardableResult func importLegacyLayout() -> Bool {
         let pages: [[LegacyLaunchpad.Item]]
         do {
             guard let path = LegacyLaunchpad.defaultPath else { throw LegacyLaunchpad.ReadError.notFound("(unknown)") }
             pages = try LegacyLaunchpad.read(path: path)
         } catch {
             Uninstaller.alert("Nothing to import", "\(error)\n\nThis only works on a Mac that used Launchpad before macOS 26.")
-            return
+            return false
         }
         let folders = pages.flatMap { $0 }.filter { if case .folder = $0 { return true } else { return false } }.count
         let alert = NSAlert()
@@ -329,9 +351,10 @@ extension AppDelegate: AppActions {
         alert.addButton(withTitle: "Import")
         alert.addButton(withTitle: "Cancel")
         NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
         let placed = model.applyImported(pages)
         Uninstaller.alert("Imported", "\(placed) apps placed from the Launchpad layout.")
+        return true
     }
 }
 
