@@ -21,6 +21,9 @@ final class FrameLog: NSObject {
     }
 
     var enabled = ProcessInfo.processInfo.environment["LAUNCHMAT_FPS_LOG"] == "1"
+    /// How many times an icon cell's body was evaluated (counted only while the log is on).
+    private(set) var cellBodies = 0
+    func countCell() { if enabled { cellBodies += 1 } }
     weak var view: NSView?
     private(set) var records: [Record] = []
     private var link: CADisplayLink?
@@ -95,10 +98,15 @@ enum FrameBench {
                 swipe(model, dx: forward * 120)
                 wait(0.9)
             }
-            swipe(model, dx: -forward * 120)
-            wait(0.9)
-            swipe(model, dx: forward * 120)
-            wait(0.9)
+            var cells: [Int] = []
+            for dx in [-forward * 120, forward * 120] {
+                let before = FrameLog.shared.cellBodies
+                swipe(model, dx: dx)
+                wait(0.9)
+                cells.append(FrameLog.shared.cellBodies - before)
+            }
+            print("fps probe: icon cells re-evaluated per turn (turns 2 and 3): \(cells.map(String.init).joined(separator: ", ")); "
+                  + "\(model.placedEntries.count) cells")
             let probe = FrameLog.shared.records[probeStart...].filter { $0.label == "page" || $0.label == "track" }
             print("fps probe (track = fingers moving, page = settling), first turns in order:")
             for r in probe { print(String(format: "  probe %@: longest %.1f ms, dropped %d", r.label, r.maxGap * 1000, r.dropped)) }

@@ -40,10 +40,17 @@ final class FocusSignal: ObservableObject {
     @Published var token = 0
 }
 
-/// See LaunchpadModel.pager.
+/// Which page shows, and how far a swipe in progress pushes it (see LaunchpadModel.pager).
 @MainActor
-final class PagerDrag: ObservableObject {
+final class PagerState: ObservableObject {
+    @Published var page = 0
     @Published var x: CGFloat = 0
+}
+
+/// The keyboard selection on the showing page (see LaunchpadModel.selection).
+@MainActor
+final class SelectionState: ObservableObject {
+    @Published var index: Int?
 }
 
 @MainActor
@@ -51,7 +58,12 @@ final class LaunchpadModel: ObservableObject {
     @Published var layout = PadLayout()
     @Published private(set) var apps: [String: AppRecord] = [:]
     @Published private(set) var icons: [String: NSImage] = [:]
-    @Published var currentPage = 0
+    /// The showing page. Kept in `pager`, not in the model's published state: turning a page moves the pages and
+    /// the page dots without re-evaluating every icon.
+    var currentPage: Int {
+        get { pager.page }
+        set { pager.page = newValue }
+    }
     @Published var query = "" {
         didSet { if oldValue != query { updateSearch() } }
     }
@@ -59,7 +71,12 @@ final class LaunchpadModel: ObservableObject {
     @Published var openFolder: UUID?
     @Published private(set) var drag: DragState?
     @Published private(set) var mergeTarget: Entry?
-    @Published var selection: Int?
+    /// The keyboard selection (a slot on the showing page). Kept in `selectionState`, watched only by the highlights.
+    var selection: Int? {
+        get { selectionState.index }
+        set { selectionState.index = newValue }
+    }
+    let selectionState = SelectionState()
     /// ⌘-click multi-selection.
     @Published var selected: Set<Entry> = []
     /// Option held: show uninstall badges (Launchpad's "jiggle" mode).
@@ -102,9 +119,9 @@ final class LaunchpadModel: ObservableObject {
     private static let wheelInterval: TimeInterval = 0.5
     private static let reflowSpring = Animation.spring(response: 0.3, dampingFraction: 0.82)
 
-    /// How far the pages are pushed by a swipe in progress. Kept out of the model's published state, so following
-    /// the fingers moves the pager without redrawing every icon.
-    let pager = PagerDrag()
+    /// The showing page and the swipe offset. Kept out of the model's published state, so turning pages and
+    /// following the fingers move the pager without re-evaluating every icon.
+    let pager = PagerState()
 
     var capacity: Int { gridSize.cols * gridSize.rows }
     var isSearching: Bool { !Search.normalizedQuery(query).isEmpty }

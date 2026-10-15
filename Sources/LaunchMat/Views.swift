@@ -28,7 +28,7 @@ struct RootView: View {
                         .frame(width: min(280, geo.size.width * 0.3))
                         .position(x: geo.size.width / 2, y: m.topInset * 0.5)
 
-                    PagerSlide(pager: model.pager) { PagerView(model: model, metrics: m) }
+                    PagerSlide(pager: model.pager, width: geo.size.width) { PagerView(model: model, metrics: m) }
 
                     if model.isSearching && model.results.isEmpty {
                         Text("No Results")
@@ -37,7 +37,7 @@ struct RootView: View {
                             .position(x: geo.size.width / 2, y: geo.size.height / 2)
                     }
 
-                    PageDots(count: model.pageCount, current: model.currentPage) { model.go(to: $0) }
+                    PageDots(pager: model.pager, count: model.pageCount) { model.go(to: $0) }
                         .position(x: geo.size.width / 2, y: geo.size.height - m.bottomInset * 0.5)
                 }
 
@@ -149,11 +149,12 @@ struct SearchField: View {
 }
 
 struct PageDots: View {
+    @ObservedObject var pager: PagerState
     let count: Int
-    let current: Int
     let onSelect: (Int) -> Void
 
     var body: some View {
+        let current = pager.page
         if count > 1 {
             HStack(spacing: 4) {
                 ForEach(0..<count, id: \.self) { i in
@@ -182,21 +183,18 @@ struct PagerView: View {
                 ForEach(Array(model.results.enumerated()), id: \.element.id) { i, app in
                     let page = i / model.capacity, slot = i % model.capacity
                     let p = metrics.cellCenter(slot)
-                    EntryCell(model: model, entry: .app(app.id), metrics: metrics, center: p,
-                              selected: page == model.currentPage && slot == model.selection)
+                    EntryCell(model: model, entry: .app(app.id), metrics: metrics, center: p, page: page, slot: slot)
                         .position(x: p.x + CGFloat(page) * w, y: p.y)
                 }
             } else {
                 ForEach(model.placedEntries) { item in
                     let p = metrics.cellCenter(item.slot)
-                    EntryCell(model: model, entry: item.entry, metrics: metrics, center: p,
-                              selected: item.page == model.currentPage && item.slot == model.selection)
+                    EntryCell(model: model, entry: item.entry, metrics: metrics, center: p, page: item.page, slot: item.slot)
                         .position(x: p.x + CGFloat(item.page) * w, y: p.y)
                 }
             }
         }
         .frame(width: w, height: metrics.size.height, alignment: .topLeading)
-        .offset(x: -CGFloat(model.currentPage) * w)
     }
 }
 
@@ -213,11 +211,28 @@ struct CenteredColumn: Shape {
 /// Moves the pages by a swipe in progress. Only this view watches the swipe offset, so the icons themselves are not
 /// re-evaluated while the fingers move.
 struct PagerSlide<Content: View>: View {
-    @ObservedObject var pager: PagerDrag
+    @ObservedObject var pager: PagerState
+    let width: CGFloat
     @ViewBuilder let content: Content
 
     var body: some View {
-        content.offset(x: pager.x)
+        content.offset(x: -CGFloat(pager.page) * width + pager.x)
+    }
+}
+
+/// The keyboard selection's highlight behind one cell. Only these small views watch the selection and the page,
+/// so moving the selection or turning a page doesn't re-evaluate the cells themselves.
+struct SelectionHighlight: View {
+    @ObservedObject var selection: SelectionState
+    @ObservedObject var pager: PagerState
+    let page: Int
+    let slot: Int
+    let width: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(.white.opacity(pager.page == page && selection.index == slot ? 0.2 : 0))
+            .frame(width: width)
     }
 }
 
@@ -248,13 +263,15 @@ struct EntryCell: View {
     let metrics: GridMetrics
     /// The cell's centre in the root coordinate space while its page is showing.
     let center: CGPoint
-    let selected: Bool
+    let page: Int
+    let slot: Int
 
     var body: some View {
         let d = model.drag
         let isDragged = d?.entry == entry && (d?.sourceFolder == nil || d?.extracted == true)
         let merging = model.mergeTarget == entry
         let picked = model.selected.contains(entry)
+        let _ = FrameLog.shared.countCell()
         let frame = IconPress.frame(center: center, iconSize: metrics.iconSize, cellWidth: metrics.cell.width * 0.94,
                                     height: metrics.contentHeight + 12)
         VStack(spacing: metrics.labelSpacing) {
@@ -283,11 +300,8 @@ struct EntryCell: View {
                 .frame(width: metrics.cell.width * 0.94)
         }
         .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.white.opacity(selected ? 0.2 : 0))
-                .frame(width: metrics.iconSize * 1.45)
-        )
+        .background(SelectionHighlight(selection: model.selectionState, pager: model.pager, page: page, slot: slot,
+                                        width: metrics.iconSize * 1.45))
         .opacity(isDragged ? 0 : (entry.appPath.map(model.isInstalled) == false ? 0.4 : 1))
         .contentShape(CenteredColumn(width: frame.width))
         .gesture(
