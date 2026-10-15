@@ -61,6 +61,19 @@ struct RootView: View {
                         .transition(.opacity)
                 }
 
+                if let card = model.whatsNew {
+                    Color.black.opacity(0.35)
+                        .contentShape(Rectangle())
+                        .onTapGesture {}
+                        .transition(.opacity)
+                    WhatsNewCard(card: card, releaseNotes: {
+                        model.dismissWhatsNew()
+                        model.openReleaseNotes?()
+                    }, dismiss: { model.dismissWhatsNew() })
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+                }
+
                 if let d = model.drag, d.sourceFolder == nil || d.extracted {
                     EntryIcon(model: model, entry: d.entry, size: m.iconSize)
                         .overlay(alignment: .topTrailing) {

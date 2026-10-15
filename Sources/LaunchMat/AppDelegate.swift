@@ -42,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // A fresh install (no layout yet, also none carried over from LaunchGrid) starts with the welcome guide.
         let freshInstall = !FileManager.default.fileExists(atPath: LaunchpadModel.layoutURL.path)
             && !UserDefaults.standard.bool(forKey: GuideWindowController.seenKey)
+        // New users meet the guide; the "What's New" card is for people upgrading.
+        if freshInstall { WhatsNew.markSeen() }
+        model.openReleaseNotes = { [weak self] in self?.openURL(Links.releaseNotes) }
         model.load()
         model.prepareWallpapers()
         controller = LaunchWindowController(model: model)
@@ -405,6 +408,7 @@ enum Snapshot {
         if let p = value("--page").flatMap(Int.init) { model.currentPage = min(p, model.pageCount - 1) }
         if let s = value("--select").flatMap(Int.init) { model.selection = s }
         if args.contains("--open-folder") { model.openFolder = model.firstFolderID }
+        if args.contains("--whats-new") { model.whatsNew = WhatsNew.current }
 
         let host = NSHostingView(rootView: RootView(model: model))
         host.frame = NSRect(origin: .zero, size: size)

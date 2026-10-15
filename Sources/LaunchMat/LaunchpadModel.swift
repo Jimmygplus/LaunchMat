@@ -476,6 +476,15 @@ final class LaunchpadModel: ObservableObject {
     /// Rename…: the app shows (and is found) under this name; an empty name goes back to the app's own.
     @Published var renaming: String?
 
+    /// The "What's New" card over the grid, once after an upgrade.
+    @Published var whatsNew: WhatsNew?
+    var openReleaseNotes: (() -> Void)?
+
+    func dismissWhatsNew() {
+        WhatsNew.markSeen()
+        withAnimation(.easeOut(duration: 0.2)) { whatsNew = nil }
+    }
+
     func rename(_ path: String, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty || trimmed == apps[path]?.name { layout.names[path] = nil } else { layout.names[path] = trimmed }
@@ -638,6 +647,9 @@ final class LaunchpadModel: ObservableObject {
     /// while it animates.
     func didShow() {
         refreshApps()
+        if whatsNew == nil, let card = WhatsNew.due {
+            withAnimation(.easeOut(duration: 0.25)) { whatsNew = card }
+        }
     }
 
     func didHide() {
@@ -805,7 +817,9 @@ final class LaunchpadModel: ObservableObject {
         let typing = !query.isEmpty
         switch e.keyCode {
         case 53: // esc
-            if openFolder != nil {
+            if whatsNew != nil {
+                dismissWhatsNew()
+            } else if openFolder != nil {
                 closeFolder()
             } else if !selected.isEmpty {
                 selected.removeAll()
