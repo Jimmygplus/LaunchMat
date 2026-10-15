@@ -424,3 +424,25 @@ final class RenameMigrationTests: XCTestCase {
         XCTAssertFalse(fm.fileExists(atPath: support.appendingPathComponent("LaunchMat/layout.json").path))
     }
 }
+
+final class PagingTests: XCTestCase {
+    func testFollowIsOneToOneThenResists() {
+        // 1512 pt wide: the 1:1 part is clamped to 72 pt.
+        XCTAssertEqual(Paging.follow(40, width: 1512), 40)
+        XCTAssertEqual(Paging.follow(-72, width: 1512), -72)
+        XCTAssertEqual(Paging.follow(252, width: 1512), 72 + 180 * 180 / 360, accuracy: 0.001)
+        XCTAssertLessThan(Paging.follow(5000, width: 1512), 72 + 180)
+        XCTAssertEqual(Paging.follow(-252, width: 1512), -Paging.follow(252, width: 1512))
+        // Narrow screens keep at least 48 pt of 1:1 movement.
+        XCTAssertEqual(Paging.follow(48, width: 400), 48)
+    }
+
+    func testTurnNeedsTheThresholdUnlessSettling() {
+        XCTAssertEqual(Paging.turn(offset: -49, threshold: 50, settling: false), 0)
+        XCTAssertEqual(Paging.turn(offset: -51, threshold: 50, settling: false), 1)
+        XCTAssertEqual(Paging.turn(offset: 51, threshold: 50, settling: false), -1)
+        XCTAssertEqual(Paging.turn(offset: -11, threshold: 10, settling: false), 1)
+        XCTAssertEqual(Paging.turn(offset: -5, threshold: 50, settling: true), 1)
+        XCTAssertEqual(Paging.turn(offset: 0, threshold: 50, settling: true), 0)
+    }
+}

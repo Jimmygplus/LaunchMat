@@ -17,9 +17,9 @@ struct RootView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { model.backgroundTapped() }
                     .gesture(
-                        DragGesture(minimumDistance: 12)
+                        DragGesture(minimumDistance: 5)
                             .onChanged { model.swipeChanged($0.translation.width) }
-                            .onEnded { model.swipeEnded($0.translation.width, predicted: $0.predictedEndTranslation.width) }
+                            .onEnded { model.swipeEnded($0.translation.width) }
                     )
 
                 ZStack(alignment: .topLeading) {
@@ -27,7 +27,7 @@ struct RootView: View {
                         .frame(width: min(280, geo.size.width * 0.3))
                         .position(x: geo.size.width / 2, y: m.topInset * 0.5)
 
-                    PagerView(model: model, metrics: m)
+                    PagerSlide(pager: model.pager) { PagerView(model: model, metrics: m) }
 
                     if model.isSearching && model.results.isEmpty {
                         Text("No Results")
@@ -186,7 +186,18 @@ struct PagerView: View {
             }
         }
         .frame(width: w, height: metrics.size.height, alignment: .topLeading)
-        .offset(x: -CGFloat(model.currentPage) * w + model.scrollOffset)
+        .offset(x: -CGFloat(model.currentPage) * w)
+    }
+}
+
+/// Moves the pages by a swipe in progress. Only this view watches the swipe offset, so the icons themselves are not
+/// re-evaluated while the fingers move.
+struct PagerSlide<Content: View>: View {
+    @ObservedObject var pager: PagerDrag
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content.offset(x: pager.x)
     }
 }
 

@@ -15,6 +15,9 @@ final class FrameLog: NSObject {
         let maxGap: Double
         let dropped: Int
         let maxFPS: Int
+        /// Time spent waiting beyond one refresh interval on late frames, and the total time measured.
+        let hitch: Double
+        let duration: Double
     }
 
     var enabled = ProcessInfo.processInfo.environment["LAUNCHMAT_FPS_LOG"] == "1"
@@ -47,8 +50,10 @@ final class FrameLog: NSObject {
         self.link = nil
         let fps = max(60, view?.window?.screen?.maximumFramesPerSecond ?? 60)
         let gaps = zip(stamps.dropFirst(), stamps).map { $0 - $1 }
-        let record = Record(label: label, frames: gaps.count, maxGap: gaps.max() ?? 0,
-                            dropped: gaps.filter { $0 > 1.5 / Double(fps) }.count, maxFPS: fps)
+        let interval = 1 / Double(fps)
+        let late = gaps.filter { $0 > 1.5 * interval }
+        let record = Record(label: label, frames: gaps.count, maxGap: gaps.max() ?? 0, dropped: late.count, maxFPS: fps,
+                            hitch: late.reduce(0) { $0 + $1 - interval }, duration: gaps.reduce(0, +))
         records.append(record)
         print(String(format: "fps %@: %d frames, longest %.1f ms, dropped %d (%d Hz)",
                      record.label, record.frames, record.maxGap * 1000, record.dropped, record.maxFPS))
@@ -78,17 +83,20 @@ enum FrameBench {
         controller.show()
         wait(1.0)
         if model.pageCount > 1 {
-            for direction in [-1, 1] {
-                for _ in 0..<min(5, model.pageCount - 1) {
-                    swipe(model, dx: CGFloat(direction) * 120)
-                    wait(0.9)
-                }
+            // Whichever way a synthetic swipe turns the page, turn back when it stops moving.
+            var direction: CGFloat = -1
+            for _ in 0..<10 {
+                let before = model.currentPage
+                swipe(model, dx: direction * 120)
+                wait(0.9)
+                if model.currentPage == before { direction = -direction }
             }
-            for direction in [-1, 1] {
-                for _ in 0..<min(3, model.pageCount - 1) {
-                    wheel(model, dy: CGFloat(direction) * 3)
-                    wait(0.9)
-                }
+            var notch: CGFloat = -3
+            for _ in 0..<6 {
+                let before = model.currentPage
+                wheel(model, dy: notch)
+                wait(0.9)
+                if model.currentPage == before { notch = -notch }
             }
         } else {
             print("fps bench: only one page, no paging measured")
@@ -96,14 +104,15 @@ enum FrameBench {
         controller.hide()
         wait(0.7)
 
-        print("fps summary (median of runs; dropped = frames over 1.5 refresh intervals):")
+        print("fps summary (median of runs; dropped = frames over 1.5 refresh intervals; hitch ratio = ms late per s):")
         let byLabel = Dictionary(grouping: FrameLog.shared.records, by: \.label)
         for label in ["open", "close", "page"] {
             guard let runs = byLabel[label], !runs.isEmpty else { continue }
             func median(_ xs: [Double]) -> Double { let s = xs.sorted(); return s[s.count / 2] }
-            print(String(format: "  %@: n=%d, dropped median %.0f (max %d), longest gap median %.1f ms (worst %.1f ms)",
+            let ratio = runs.map(\.hitch).reduce(0, +) / max(0.001, runs.map(\.duration).reduce(0, +)) * 1000
+            print(String(format: "  %@: n=%d, dropped median %.0f (max %d), longest gap median %.1f ms (worst %.1f ms), hitch ratio %.0f ms/s",
                          label, runs.count, median(runs.map { Double($0.dropped) }), runs.map(\.dropped).max()!,
-                         median(runs.map(\.maxGap)) * 1000, runs.map(\.maxGap).max()! * 1000))
+                         median(runs.map(\.maxGap)) * 1000, runs.map(\.maxGap).max()! * 1000, ratio))
         }
         exit(0)
     }
@@ -132,6 +141,7 @@ enum FrameBench {
         cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: Double(dy))
         cg.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: Double(dx))
         cg.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+        cg.timestamp = CGEventTimestamp(clock_gettime_nsec_np(CLOCK_UPTIME_RAW))
         return NSEvent(cgEvent: cg)
     }
 }

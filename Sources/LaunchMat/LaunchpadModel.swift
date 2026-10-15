@@ -25,13 +25,18 @@ struct PlacedEntry: Identifiable {
     var id: String { entry.key }
 }
 
+/// See LaunchpadModel.pager.
+@MainActor
+final class PagerDrag: ObservableObject {
+    @Published var x: CGFloat = 0
+}
+
 @MainActor
 final class LaunchpadModel: ObservableObject {
     @Published var layout = PadLayout()
     @Published private(set) var apps: [String: AppRecord] = [:]
     @Published private(set) var icons: [String: NSImage] = [:]
     @Published var currentPage = 0
-    @Published var scrollOffset: CGFloat = 0
     @Published var query = "" {
         didSet { if oldValue != query { updateSearch() } }
     }
@@ -63,13 +68,25 @@ final class LaunchpadModel: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var suppressTapUntil = Date.distantPast
     private var swipeAccum: CGFloat = 0
-    private var wheelCooldown = Date.distantPast
+    /// Locked when a trackpad swipe starts: true = vertical, false = horizontal, nil = not decided yet.
+    private var swipeVertical: Bool?
+    private var lastWheelFlip: TimeInterval = -.infinity
+    private var pageSettlingUntil = Date.distantPast
     private var scanning = false
     private var pendingScan: [AppRecord]?
     private var iconStamps: [String: Date?] = [:]
 
-    private static let pageSpring = Animation.spring(response: 0.38, dampingFraction: 0.9)
+    /// Overdamped: the page glides to rest without bouncing, settling in about 0.7 s.
+    private static let pageSpring = Animation.interpolatingSpring(mass: 0.02, stiffness: 4, damping: 1)
+    private static let pageSettle: TimeInterval = 0.7
+    /// Mouse wheel: smallest delta that counts, and the shortest time between two page turns.
+    private static let wheelThreshold: CGFloat = 1.0
+    private static let wheelInterval: TimeInterval = 0.5
     private static let reflowSpring = Animation.spring(response: 0.3, dampingFraction: 0.82)
+
+    /// How far the pages are pushed by a swipe in progress. Kept out of the model's published state, so following
+    /// the fingers moves the pager without redrawing every icon.
+    let pager = PagerDrag()
 
     var capacity: Int { gridSize.cols * gridSize.rows }
     var isSearching: Bool { !Search.normalizedQuery(query).isEmpty }
@@ -298,7 +315,7 @@ final class LaunchpadModel: ObservableObject {
             return
         }
         currentPage = 0
-        scrollOffset = 0
+        pager.x = 0
         selection = results.isEmpty ? nil : 0
     }
 
@@ -455,7 +472,7 @@ final class LaunchpadModel: ObservableObject {
         selection = nil
         selected.removeAll()
         optionHeld = false
-        scrollOffset = 0
+        pager.x = 0
         saveNow()
     }
 
@@ -463,58 +480,72 @@ final class LaunchpadModel: ObservableObject {
 
     func go(to page: Int) {
         let target = max(0, min(pageCount - 1, page))
-        if target != currentPage { FrameLog.shared.begin("page", seconds: 0.8) }
+        if target != currentPage {
+            FrameLog.shared.begin("page", seconds: 0.8)
+            pageSettlingUntil = Date().addingTimeInterval(Self.pageSettle)
+        }
         withAnimation(Self.pageSpring) {
             currentPage = target
-            scrollOffset = 0
+            pager.x = 0
         }
     }
 
-    private func rubberBand(_ x: CGFloat) -> CGFloat {
-        let atStart = currentPage == 0 && x > 0
-        let atEnd = currentPage >= pageCount - 1 && x < 0
-        return atStart || atEnd ? x * 0.3 : x
+    private func track(_ d: CGFloat) {
+        var t = Transaction()
+        t.disablesAnimations = true
+        withTransaction(t) { pager.x = Paging.follow(d, width: metrics.size.width) }
     }
 
     func swipeChanged(_ dx: CGFloat) {
         guard openFolder == nil, drag == nil else { return }
-        scrollOffset = rubberBand(dx)
+        track(dx)
     }
 
-    func swipeEnded(_ dx: CGFloat, predicted: CGFloat) {
+    func swipeEnded(_ dx: CGFloat) {
         guard openFolder == nil, drag == nil else { return }
         suppressTapUntil = Date().addingTimeInterval(0.2)
-        settlePage(abs(predicted) > abs(dx) ? predicted : dx)
+        settlePage(dx, threshold: Paging.threshold)
     }
 
-    private func settlePage(_ offset: CGFloat) {
-        let threshold = metrics.size.width * 0.12
-        var target = currentPage
-        if offset < -threshold { target += 1 } else if offset > threshold { target -= 1 }
+    /// Turns the page, or springs back when the swipe was too short (see Paging.turn).
+    private func settlePage(_ offset: CGFloat, threshold: Double) {
+        let target = currentPage + Paging.turn(offset: offset, threshold: threshold, settling: Date() < pageSettlingUntil)
         if target != currentPage { selection = nil }
         go(to: target)
     }
 
-    /// Trackpad: follow the fingers, then snap. Mouse wheel: one notch = one page.
+    /// Trackpad: follow the fingers, then turn the page or spring back. Mouse wheel: one notch = one page.
     func handleScroll(_ e: NSEvent) {
         guard openFolder == nil, drag == nil else { return }
         if e.hasPreciseScrollingDeltas {
             if !e.momentumPhase.isEmpty { return }
-            if e.phase.contains(.began) { swipeAccum = 0 }
+            if e.phase.contains(.began) {
+                swipeAccum = 0
+                swipeVertical = nil
+            }
             if e.phase.contains(.began) || e.phase.contains(.changed) {
-                let dx = e.scrollingDeltaX, dy = e.scrollingDeltaY
-                guard abs(dx) >= abs(dy) || swipeAccum != 0 else { return }
-                swipeAccum += dx
-                scrollOffset = rubberBand(swipeAccum)
+                // The pages move with the fingers whether or not natural scrolling is on.
+                let sign: CGFloat = e.isDirectionInvertedFromDevice ? 1 : -1
+                let dx = e.scrollingDeltaX * sign, dy = e.scrollingDeltaY * sign
+                guard abs(dx) >= 0.001 || abs(dy) >= 0.001 else { return }
+                if swipeVertical == nil { swipeVertical = abs(dy) > abs(dx) }
+                if swipeVertical == true {
+                    swipeAccum += dy
+                } else {
+                    swipeAccum += dx
+                    track(swipeAccum)
+                }
             }
             if e.phase.contains(.ended) || e.phase.contains(.cancelled) {
-                settlePage(swipeAccum)
+                let threshold = swipeVertical == true ? Paging.verticalThreshold : Paging.threshold
+                settlePage(swipeAccum, threshold: threshold)
                 swipeAccum = 0
+                swipeVertical = nil
             }
         } else {
-            let d = e.scrollingDeltaY != 0 ? e.scrollingDeltaY : e.scrollingDeltaX
-            guard abs(d) > 0.1, Date() > wheelCooldown else { return }
-            wheelCooldown = Date().addingTimeInterval(0.3)
+            let d = abs(e.scrollingDeltaX) > abs(e.scrollingDeltaY) ? e.scrollingDeltaX : e.scrollingDeltaY
+            guard abs(d) >= Self.wheelThreshold, e.timestamp - lastWheelFlip >= Self.wheelInterval else { return }
+            lastWheelFlip = e.timestamp
             selection = nil
             go(to: currentPage + (d < 0 ? 1 : -1))
         }
