@@ -12,6 +12,11 @@
 	<string>io.github.jimmygplus.LaunchMat</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hans</string>
+	</array>
 	<key>CFBundleName</key>
 	<string>LaunchMat</string>
 	<key>CFBundlePackageType</key>
