@@ -85,6 +85,7 @@ final class LaunchpadModel: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var suppressTapUntil = Date.distantPast
     private var swipeAccum: CGFloat = 0
+    private var blankPaging = false
     /// Locked when a trackpad swipe starts: true = vertical, false = horizontal, nil = not decided yet.
     private var swipeVertical: Bool?
     private var lastWheelFlip: TimeInterval = -.infinity
@@ -470,7 +471,11 @@ final class LaunchpadModel: ObservableObject {
         }
     }
 
+    /// Replaces opening apps, for --mouse-test.
+    var launchHandler: ((String) -> Void)?
+
     func launch(_ path: String) {
+        if let launchHandler { return launchHandler(path) }
         guard isInstalled(path) else { return } // kept in place while missing (updating / reinstalling)
         NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: path),
                                            configuration: NSWorkspace.OpenConfiguration()) { _, error in
@@ -575,15 +580,27 @@ final class LaunchpadModel: ObservableObject {
         withTransaction(t) { pager.x = Paging.follow(d, width: metrics.size.width) }
     }
 
-    func swipeChanged(_ dx: CGFloat) {
+    /// A press on a blank part of the grid. It turns into a page drag once it has moved 4 pt sideways (up and down
+    /// don't count); from then on the pages follow the pointer like a swipe.
+    func blankDragChanged(_ t: CGSize) {
         guard openFolder == nil, drag == nil else { return }
-        track(dx)
+        if !blankPaging, abs(t.width) >= IconPress.dragStart {
+            blankPaging = true
+            FrameLog.shared.begin("track", seconds: 1.0)
+        }
+        if blankPaging { track(t.width) }
     }
 
-    func swipeEnded(_ dx: CGFloat) {
-        guard openFolder == nil, drag == nil else { return }
-        suppressTapUntil = Date().addingTimeInterval(0.2)
-        settlePage(dx, threshold: Paging.threshold)
+    /// Releasing a page drag turns the page past 50 pt (or springs back); a press that didn't move 4 pt is a click
+    /// on blank space, which closes the grid (or an open folder).
+    func blankDragEnded(_ t: CGSize) {
+        defer { blankPaging = false }
+        if blankPaging {
+            guard openFolder == nil, drag == nil else { return }
+            settlePage(t.width, threshold: Paging.threshold)
+        } else if hypot(t.width, t.height) < IconPress.dragStart {
+            backgroundTapped()
+        }
     }
 
     /// Turns the page, or springs back when the swipe was too short (see Paging.turn).

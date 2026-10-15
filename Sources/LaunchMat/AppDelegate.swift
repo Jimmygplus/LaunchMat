@@ -24,6 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if args.contains("--fps-bench") {
             FrameBench.run(model: model)
         }
+        if args.contains("--mouse-test") {
+            MouseTest.run(model: model)
+        }
         if args.contains("--snapshot") {
             Snapshot.run(model: model, args: args)
             return

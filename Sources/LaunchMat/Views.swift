@@ -10,15 +10,17 @@ struct RootView: View {
         GeometryReader { geo in
             let m = GridMetrics(size: geo.size, cols: model.gridSize.cols, rows: model.gridSize.rows)
             ZStack(alignment: .topLeading) {
+                // Everything not covered by an icon, the search field or the page dots is blank: empty slots, the
+                // gaps between icons and the margins. One gesture reads a press there: dragging 4 pt sideways turns
+                // pages (following the pointer like a swipe), a press that doesn't move closes the grid.
                 BackgroundView(image: model.wallpaper)
                     .frame(width: geo.size.width, height: geo.size.height)
                     .clipped()
                     .contentShape(Rectangle())
-                    .onTapGesture { model.backgroundTapped() }
                     .gesture(
-                        DragGesture(minimumDistance: 5)
-                            .onChanged { model.swipeChanged($0.translation.width) }
-                            .onEnded { model.swipeEnded($0.translation.width) }
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { model.blankDragChanged($0.translation) }
+                            .onEnded { model.blankDragEnded($0.translation) }
                     )
 
                 ZStack(alignment: .topLeading) {
@@ -198,6 +200,16 @@ struct PagerView: View {
     }
 }
 
+/// A shape covering a centred column of the view, for hit-testing only the icon's column of a cell.
+struct CenteredColumn: Shape {
+    let width: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let w = min(width, rect.width)
+        return Path(CGRect(x: rect.midX - w / 2, y: rect.minY, width: w, height: rect.height))
+    }
+}
+
 /// Moves the pages by a swipe in progress. Only this view watches the swipe offset, so the icons themselves are not
 /// re-evaluated while the fingers move.
 struct PagerSlide<Content: View>: View {
@@ -213,6 +225,13 @@ struct PagerSlide<Content: View>: View {
 /// dragged, within the icon's frame widened by 6 pt left and right and 2 pt up and down, is a click.
 enum IconPress {
     static let dragStart: CGFloat = 4
+
+    /// An icon's frame: the column of its icon and name, as wide as its highlight, centred on the cell. The rest of
+    /// the cell is blank (it pages and closes like the margins).
+    static func frame(center: CGPoint, iconSize: CGFloat, cellWidth: CGFloat, height: CGFloat) -> CGRect {
+        let width = min(cellWidth, iconSize * 1.45)
+        return CGRect(x: center.x - width / 2, y: center.y - height / 2, width: width, height: height)
+    }
 
     static func isDrag(_ v: DragGesture.Value) -> Bool {
         hypot(v.translation.width, v.translation.height) >= dragStart
@@ -236,8 +255,8 @@ struct EntryCell: View {
         let isDragged = d?.entry == entry && (d?.sourceFolder == nil || d?.extracted == true)
         let merging = model.mergeTarget == entry
         let picked = model.selected.contains(entry)
-        let size = CGSize(width: metrics.cell.width * 0.94, height: metrics.contentHeight + 12)
-        let frame = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
+        let frame = IconPress.frame(center: center, iconSize: metrics.iconSize, cellWidth: metrics.cell.width * 0.94,
+                                    height: metrics.contentHeight + 12)
         VStack(spacing: metrics.labelSpacing) {
             EntryIcon(model: model, entry: entry, size: metrics.iconSize)
                 .background(
@@ -270,7 +289,7 @@ struct EntryCell: View {
                 .frame(width: metrics.iconSize * 1.45)
         )
         .opacity(isDragged ? 0 : (entry.appPath.map(model.isInstalled) == false ? 0.4 : 1))
-        .contentShape(Rectangle())
+        .contentShape(CenteredColumn(width: frame.width))
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named("root"))
                 .onChanged { v in
@@ -445,8 +464,8 @@ struct FolderAppCell: View {
     var body: some View {
         let dragged = model.drag?.entry == .app(path) && model.drag?.sourceFolder == folderID
         let font = max(11, min(14, panel.iconSize * 0.12))
-        let size = CGSize(width: panel.cell.width * 0.94, height: panel.iconSize + 6 + font * 1.3)
-        let frame = CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
+        let height = panel.iconSize + 6 + font * 1.3
+        let frame = IconPress.frame(center: center, iconSize: panel.iconSize, cellWidth: panel.cell.width * 0.94, height: height)
         VStack(spacing: 6) {
             AppIconImage(image: model.icons[path], size: panel.iconSize)
                 .overlay(alignment: .topLeading) {
@@ -462,12 +481,12 @@ struct FolderAppCell: View {
                 .frame(width: panel.cell.width * 0.94)
         }
         .opacity(dragged ? 0 : 1)
-        .contentShape(Rectangle())
+        .contentShape(CenteredColumn(width: frame.width))
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named("root"))
                 .onChanged { v in
                     guard model.drag != nil || IconPress.isDrag(v) else { return }
-                    let icon = CGPoint(x: center.x, y: center.y - (size.height - panel.iconSize) / 2)
+                    let icon = CGPoint(x: center.x, y: center.y - (height - panel.iconSize) / 2)
                     model.folderDragChanged(path, folder: folderID, at: v.location, grabbedAt: v.startLocation,
                                             iconCenter: icon, iconSize: panel.iconSize)
                 }
