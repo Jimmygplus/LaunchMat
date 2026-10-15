@@ -16,6 +16,8 @@ enum SelfTest {
         func wait(_ s: Double) { RunLoop.main.run(until: Date().addingTimeInterval(s)) }
         /// A point inside the slot but away from the icon's center (reorder zone).
         func gap(_ slot: Int) -> CGPoint { let c = m.cellCenter(slot); return CGPoint(x: c.x, y: c.y + m.cell.height * 0.42) }
+        /// The left half of a slot, away from the icon: dropping there puts the item before whatever is in the slot.
+        func before(_ slot: Int) -> CGPoint { let g = gap(slot); return CGPoint(x: g.x - m.cell.width * 0.3, y: g.y) }
 
         // 1. Reorder: drag slot 0 into slot 3.
         let a = page0()[0], b = page0()[1]
@@ -67,7 +69,7 @@ enum SelfTest {
         model.dragChanged(r, at: CGPoint(x: m.size.width - 10, y: m.size.height / 2))
         wait(0.8)
         check("edge flip to page 2", model.currentPage == 1)
-        model.dragChanged(r, at: gap(0))
+        model.dragChanged(r, at: before(0))
         model.dragEnded()
         check("dropped on page 2 slot 0", model.layout.locate(r).map { $0.page == 1 && $0.index == 0 } == true)
 
@@ -83,7 +85,7 @@ enum SelfTest {
         model.selected = [s1, s2, s3]
         model.dragChanged(s2, at: m.iconCenter(6))
         check("companions lifted out while dragging", model.layout.locate(s1) == nil && model.layout.locate(s3) == nil)
-        model.dragChanged(s2, at: gap(0))
+        model.dragChanged(s2, at: before(0))
         model.dragEnded()
         check("multi-drop keeps order at slot 0", Array(page0().prefix(3)) == [s2, s1, s3])
         check("selection cleared after multi-drop", model.selected.isEmpty)

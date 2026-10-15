@@ -198,6 +198,25 @@ struct PagerView: View {
     }
 }
 
+/// The plate under an icon while a dragged app is held over it, ready to make a folder: it grows from 72% on a
+/// spring (stiffness 520, damping 32) while fading in over 0.16 s, and shrinks back (420, 36) while fading out over
+/// 0.12 s when the app moves away.
+struct MergePlate: View {
+    let active: Bool
+    let size: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+            .fill(.white.opacity(0.3))
+            .frame(width: size * 1.18, height: size * 1.18)
+            .scaleEffect(active ? 1 : 0.72)
+            .animation(active ? .interpolatingSpring(mass: 1, stiffness: 520, damping: 32)
+                              : .interpolatingSpring(mass: 1, stiffness: 420, damping: 36), value: active)
+            .opacity(active ? 1 : 0)
+            .animation(active ? .easeOut(duration: 0.16) : .easeIn(duration: 0.12), value: active)
+    }
+}
+
 /// A shape covering a centred column of the view, for hit-testing only the icon's column of a cell.
 struct CenteredColumn: Shape {
     let width: CGFloat
@@ -278,9 +297,10 @@ struct EntryCell: View {
             EntryIcon(model: model, entry: entry, size: metrics.iconSize)
                 .background(
                     RoundedRectangle(cornerRadius: metrics.iconSize * 0.28, style: .continuous)
-                        .fill(.white.opacity(merging ? 0.3 : (picked ? 0.22 : 0)))
+                        .fill(.white.opacity(picked ? 0.22 : 0))
                         .frame(width: metrics.iconSize * 1.18, height: metrics.iconSize * 1.18)
                 )
+                .background(MergePlate(active: merging, size: metrics.iconSize))
                 .overlay(alignment: .topTrailing) {
                     if picked { SelectionCheck(size: metrics.iconSize) }
                 }
@@ -290,7 +310,6 @@ struct EntryCell: View {
                     }
                 }
                 .modifier(Jiggle(active: model.optionHeld))
-                .scaleEffect(merging ? 1.12 : 1)
             Text(model.title(for: entry))
                 .font(.system(size: metrics.labelFont, weight: .medium))
                 .foregroundStyle(.white)

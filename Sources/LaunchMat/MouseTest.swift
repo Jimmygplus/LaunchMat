@@ -98,6 +98,37 @@ enum MouseTest {
               abs(grab.width - 15) < 0.5 && abs(grab.height - 10) < 0.5)
         check("icon: a drag doesn't open anything", launched.isEmpty)
 
+        // Folders: drag one app onto another, approaching from the left, from the right and from two slots away,
+        // hold it there, and it becomes a folder. The layout is put back after each case.
+        func mergeTest(_ name: String, from source: Int, onto target: Int) {
+            model.go(to: 0)
+            wait(0.5)
+            let saved = model.layout
+            let page = model.layout.pages[0]
+            guard page.count > max(source, target), page[source].appPath != nil, page[target].appPath != nil else {
+                return print("SKIP  \(name)")
+            }
+            let targetEntry = page[target]
+            let folders = model.layout.folders.count
+            let from = m.iconCenter(source), to = m.iconCenter(target)
+            send(.leftMouseDown, from)
+            for i in 1...16 {
+                let f = CGFloat(i) / 16
+                send(.leftMouseDragged, CGPoint(x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f))
+            }
+            for _ in 0..<45 { send(.leftMouseDragged, to) } // hold about 0.75 s
+            send(.leftMouseUp, to)
+            wait(0.9)
+            let folder = model.layout.folders.values.first { $0.apps.contains(targetEntry.appPath!) }
+            check(name, model.layout.folders.count == folders + 1 && folder?.apps.contains(page[source].appPath!) == true)
+            if model.openFolder != nil { model.closeFolder(); wait(0.5) }
+            model.layout = saved
+            wait(0.5)
+        }
+        mergeTest("folder: app dragged from the left onto its neighbour", from: 2, onto: 3)
+        mergeTest("folder: app dragged from the right onto its neighbour", from: 4, onto: 3)
+        mergeTest("folder: app dragged across one slot onto an app", from: 1, onto: 3)
+
         // Right-click: blank space opens the main menu, icons and the search field keep theirs.
         check("right-click target: margin, gap and empty slot are blank, an icon and the search field are not",
               model.isBlank(at: margin) && model.isBlank(at: gap) && model.isBlank(at: m.iconCenter(model.capacity - 1))

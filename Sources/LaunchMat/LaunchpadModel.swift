@@ -796,6 +796,7 @@ final class LaunchpadModel: ObservableObject {
             }
             drag = state
             selection = nil
+            lastSortPoint = nil
         }
         drag?.location = loc
         guard let dragged = drag?.entry else { return }
@@ -807,20 +808,44 @@ final class LaunchpadModel: ObservableObject {
         let page = currentPage < layout.pages.count ? layout.pages[currentPage] : []
         if idx < page.count, page[idx] != dragged {
             let target = page[idx]
-            let c = metrics.iconCenter(idx)
             let mergeable = dragged.appPath != nil && (drag?.companions.allSatisfy { $0.appPath != nil } ?? true)
-            if mergeable, hypot(loc.x - c.x, loc.y - c.y) < metrics.iconSize * 0.4 {
-                beginMerge(target) // hovering on an icon's center: make a folder
+            if mergeable, mergeZone(idx).contains(loc) {
+                beginMerge(target) // over the middle of an icon (app or folder): make a folder or join it
                 return
             }
             cancelMerge()
-            place(dragged, at: idx)
+            // Elsewhere in the cell (its edges, the gap, the name) the pointer only decides before or after the
+            // target, so approaching a neighbour doesn't push it away before the merge zone is reached.
+            guard sortPointMoved(loc) else { return }
+            let from = page.firstIndex(of: dragged)
+            let targetIndex = from.map { $0 < idx ? idx - 1 : idx } ?? idx // counted without the dragged item
+            let index = targetIndex + (loc.x >= metrics.cellCenter(idx).x ? 1 : 0)
+            if index != from { place(dragged, at: index) }
         } else if idx >= page.count {
             cancelMerge()
+            guard sortPointMoved(loc) else { return }
             place(dragged, at: page.count)
         } else {
             cancelMerge()
         }
+    }
+
+    /// The part of an icon that makes a folder when an app is held over it: the icon image inset by
+    /// `mergeZoneInset` of its size on each side.
+    private func mergeZone(_ slot: Int) -> CGRect {
+        let c = metrics.iconCenter(slot), s = metrics.iconSize
+        return CGRect(x: c.x - s / 2, y: c.y - s / 2, width: s, height: s).insetBy(dx: s * Self.mergeZoneInset, dy: s * Self.mergeZoneInset)
+    }
+
+    /// Provisional, to be calibrated against the original (recording S06): 20% in from each side of the icon.
+    private static let mergeZoneInset: CGFloat = 0.2
+    /// Reordering is recalculated only after the pointer has moved 4 pt from where it was last done.
+    private var lastSortPoint: CGPoint?
+
+    private func sortPointMoved(_ loc: CGPoint) -> Bool {
+        if let last = lastSortPoint, hypot(loc.x - last.x, loc.y - last.y) < 4 { return false }
+        lastSortPoint = loc
+        return true
     }
 
     private func place(_ entry: Entry, at idx: Int) {
@@ -837,10 +862,11 @@ final class LaunchpadModel: ObservableObject {
         if pendingMerge == target { return }
         cancelMerge()
         pendingMerge = target
+        // After 0.1 s over the merge zone the target shows its merge plate (see MergePlate); dropping then merges.
         mergeTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            try? await Task.sleep(nanoseconds: 100_000_000)
             guard !Task.isCancelled, let self, self.pendingMerge == target else { return }
-            withAnimation(.easeOut(duration: 0.15)) { self.mergeTarget = target }
+            self.mergeTarget = target
         }
     }
 
@@ -848,7 +874,7 @@ final class LaunchpadModel: ObservableObject {
         mergeTask?.cancel()
         mergeTask = nil
         pendingMerge = nil
-        if mergeTarget != nil { withAnimation(.easeOut(duration: 0.12)) { mergeTarget = nil } }
+        if mergeTarget != nil { mergeTarget = nil }
     }
 
     /// Holding the dragged icon near the left/right edge flips the page (and can open a new last page).
