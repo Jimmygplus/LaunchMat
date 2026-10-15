@@ -30,6 +30,7 @@ final class LaunchWindowController: NSObject {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         window.contentView = NSHostingView(rootView: RootView(model: model))
         FrameLog.shared.view = window.contentView
+        FrameRateBoost.view = window.contentView
         model.dismissHandler = { [weak self] in self?.hide() }
 
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification,
@@ -72,16 +73,17 @@ final class LaunchWindowController: NSObject {
         isVisible = true
         FrameLog.shared.begin("open", seconds: 0.45)
         generation += 1
+        let gen = generation
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
             ?? NSScreen.main ?? NSScreen.screens.first else { return }
         window.setFrame(screen.frame, display: false)
         model.willShow(on: screen)
-        window.alphaValue = 0
+        window.alphaValue = 1
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.18
-            window.animator().alphaValue = 1
+        animate(open: true) { [weak self] in
+            guard let self, self.generation == gen else { return }
+            self.model.didShow()
         }
     }
 
@@ -89,18 +91,89 @@ final class LaunchWindowController: NSObject {
         guard isVisible else { return }
         isVisible = false
         FrameLog.shared.begin("close", seconds: 0.4)
+        generation += 1
         let gen = generation
-        model.willHide()
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.15
-            window.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, self.generation == gen else { return }
-                self.window.orderOut(nil)
-                self.model.didHide()
-            }
-        })
+        animate(open: false) { [weak self] in
+            guard let self, self.generation == gen else { return }
+            self.window.orderOut(nil)
+            self.model.didHide()
+        }
+    }
+
+    /// Opening: the content fades in while it settles from 105% to 100%. Closing: the reverse. One Core Animation
+    /// transaction on the content view's layer, 0.24 s ease-out, so SwiftUI redraws nothing while it runs. When it
+    /// interrupts the other direction, it starts from what is on screen, for the remaining share of the time.
+    private func animate(open: Bool, completion: @escaping @MainActor () -> Void) {
+        guard let view = window.contentView else { return completion() }
+        view.wantsLayer = true
+        guard let layer = view.layer else { return completion() }
+        let size = view.bounds.size
+        func scaled(_ s: CGFloat) -> CATransform3D {
+            // Scale about the centre (the backing layer's anchor point is its corner).
+            var t = CATransform3DMakeTranslation(size.width / 2, size.height / 2, 0)
+            t = CATransform3DScale(t, s, s, 1)
+            return CATransform3DTranslate(t, -size.width / 2, -size.height / 2, 0)
+        }
+        let restScale: CGFloat = 1.05
+        let shown = layer.presentation()
+        let animating = layer.animation(forKey: "launchmat.opacity") != nil
+        let fromOpacity = animating ? CGFloat(shown?.opacity ?? 0) : (open ? 0 : 1)
+        let fromScale = animating ? (shown?.transform.m11 ?? restScale) : (open ? restScale : 1)
+        let toOpacity: CGFloat = open ? 1 : 0
+        let toScale: CGFloat = open ? 1 : restScale
+        let duration = 0.24 * max(0.05, abs(toOpacity - fromOpacity))
+
+        let fps = Float(max(60, window.screen?.maximumFramesPerSecond ?? 60))
+        func basic(_ key: String, _ from: Any, _ to: Any) -> CABasicAnimation {
+            let a = CABasicAnimation(keyPath: key)
+            a.fromValue = from
+            a.toValue = to
+            a.duration = duration
+            a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            a.fillMode = .forwards
+            a.isRemovedOnCompletion = false
+            a.preferredFrameRateRange = CAFrameRateRange(minimum: min(80, fps), maximum: fps, preferred: fps)
+            return a
+        }
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { MainActor.assumeIsolated { completion() } }
+        layer.removeAnimation(forKey: "launchmat.opacity")
+        layer.removeAnimation(forKey: "launchmat.transform")
+        layer.add(basic("opacity", fromOpacity, toOpacity), forKey: "launchmat.opacity")
+        layer.add(basic("transform", NSValue(caTransform3D: scaled(fromScale)), NSValue(caTransform3D: scaled(toScale))),
+                  forKey: "launchmat.transform")
+        CATransaction.commit()
+    }
+}
+
+/// Asks the display for its highest refresh rate while a SwiftUI animation runs (page turns): Core Animation's own
+/// animations carry their frame-rate range, SwiftUI's don't, so an idle display link holds the rate up.
+@MainActor
+enum FrameRateBoost {
+    static weak var view: NSView?
+    private static var link: CADisplayLink?
+    private static var until: CFTimeInterval = 0
+    private static let target = Target()
+
+    static func hold(for seconds: Double) {
+        guard let view else { return }
+        until = max(until, CACurrentMediaTime() + seconds)
+        guard link == nil else { return }
+        let fps = Float(max(60, view.window?.screen?.maximumFramesPerSecond ?? 60))
+        let link = view.displayLink(target: target, selector: #selector(Target.tick(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: min(80, fps), maximum: fps, preferred: fps)
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
+    fileprivate static func tick(_ link: CADisplayLink) {
+        guard link.timestamp >= until else { return }
+        link.invalidate()
+        self.link = nil
+    }
+
+    private final class Target: NSObject {
+        @objc func tick(_ link: CADisplayLink) { MainActor.assumeIsolated { FrameRateBoost.tick(link) } }
     }
 }
 

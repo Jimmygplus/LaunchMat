@@ -25,6 +25,12 @@ struct PlacedEntry: Identifiable {
     var id: String { entry.key }
 }
 
+/// See LaunchpadModel.focus.
+@MainActor
+final class FocusSignal: ObservableObject {
+    @Published var token = 0
+}
+
 /// See LaunchpadModel.pager.
 @MainActor
 final class PagerDrag: ObservableObject {
@@ -51,8 +57,8 @@ final class LaunchpadModel: ObservableObject {
     @Published var optionHeld = false
     @Published private(set) var gridSize = GridSize.load()
     @Published var wallpaper: NSImage?
-    @Published var shown = false
-    @Published var focusToken = 0
+    /// Bumped to put the cursor in the search field; watched only by the field, not by the grid.
+    let focus = FocusSignal()
 
     /// Kept in sync by the view; drag hit-testing uses it.
     var metrics = GridMetrics(size: CGSize(width: 1440, height: 900), cols: 7, rows: 5)
@@ -421,7 +427,7 @@ final class LaunchpadModel: ObservableObject {
 
     func closeFolder() {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { openFolder = nil }
-        focusToken += 1
+        focus.token += 1
     }
 
     func showInFinder(_ path: String) {
@@ -452,14 +458,13 @@ final class LaunchpadModel: ObservableObject {
 
     func willShow(on screen: NSScreen) {
         wallpaper = Wallpaper.blurred(for: screen)
-        refreshApps()
-        shown = false
-        withAnimation(.easeOut(duration: 0.22)) { shown = true }
-        focusToken += 1
+        focus.token += 1
     }
 
-    func willHide() {
-        withAnimation(.easeIn(duration: 0.15)) { shown = false }
+    /// After the opening animation: catch up with apps installed or removed meanwhile. Nothing in the grid changes
+    /// while it animates.
+    func didShow() {
+        refreshApps()
     }
 
     func didHide() {
@@ -483,6 +488,7 @@ final class LaunchpadModel: ObservableObject {
         if target != currentPage {
             FrameLog.shared.begin("page", seconds: 0.8)
             pageSettlingUntil = Date().addingTimeInterval(Self.pageSettle)
+            FrameRateBoost.hold(for: Self.pageSettle)
         }
         withAnimation(Self.pageSpring) {
             currentPage = target
@@ -778,7 +784,7 @@ final class LaunchpadModel: ObservableObject {
             if let newFolder { openFolder = newFolder }
             currentPage = min(currentPage, max(0, l.pages.count - 1))
         }
-        focusToken += 1
+        focus.token += 1
         scheduleSave()
         if let records = pendingScan {
             pendingScan = nil

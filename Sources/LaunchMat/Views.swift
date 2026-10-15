@@ -9,7 +9,6 @@ struct RootView: View {
     var body: some View {
         GeometryReader { geo in
             let m = GridMetrics(size: geo.size, cols: model.gridSize.cols, rows: model.gridSize.rows)
-            let folderOpen = model.openFolder != nil && model.drag?.extracted != true
             ZStack(alignment: .topLeading) {
                 BackgroundView(image: model.wallpaper)
                     .frame(width: geo.size.width, height: geo.size.height)
@@ -39,9 +38,6 @@ struct RootView: View {
                     PageDots(count: model.pageCount, current: model.currentPage) { model.go(to: $0) }
                         .position(x: geo.size.width / 2, y: geo.size.height - m.bottomInset * 0.5)
                 }
-                .blur(radius: folderOpen ? 14 : 0)
-                .scaleEffect(model.shown ? 1 : 1.07)
-                .opacity(model.shown ? 1 : 0)
 
                 if let id = model.openFolder {
                     FolderOverlay(model: model, folderID: id)
@@ -71,9 +67,19 @@ struct RootView: View {
                 searchFocused = true
             }
             .onChange(of: m) { _, new in model.metrics = new }
-            .onChange(of: model.focusToken) { _, _ in searchFocused = true }
+            .modifier(FocusOnSignal(signal: model.focus, focused: $searchFocused))
         }
         .ignoresSafeArea()
+    }
+}
+
+/// Puts the cursor in the search field when the signal fires. Only this modifier watches the signal.
+struct FocusOnSignal: ViewModifier {
+    @ObservedObject var signal: FocusSignal
+    var focused: FocusState<Bool>.Binding
+
+    func body(content: Content) -> some View {
+        content.onChange(of: signal.token) { _, _ in focused.wrappedValue = true }
     }
 }
 
@@ -367,9 +373,13 @@ struct FolderOverlay: View {
         let apps = model.layout.folders[folderID]?.apps ?? []
         let extracting = model.drag?.extracted == true
         ZStack(alignment: .topLeading) {
-            Color.black.opacity(0.15)
-                .contentShape(Rectangle())
-                .onTapGesture { model.closeFolder() }
+            // The grid behind an open folder is blurred by this layer, which exists only while the folder is open.
+            ZStack {
+                VisualEffect(material: .fullScreenUI, blending: .withinWindow)
+                Color.black.opacity(0.15)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { model.closeFolder() }
 
             VisualEffect(material: .hudWindow, blending: .withinWindow)
                 .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))

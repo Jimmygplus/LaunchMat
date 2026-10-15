@@ -315,7 +315,6 @@ enum Snapshot {
         model.load(fresh: args.contains("--fresh"), sync: true)
         if let screen = NSScreen.main { model.wallpaper = Wallpaper.blurred(for: screen) }
         model.metrics = GridMetrics(size: size, cols: model.gridSize.cols, rows: model.gridSize.rows)
-        model.shown = true
         if let q = value("--query") { model.query = q }
         if let p = value("--page").flatMap(Int.init) { model.currentPage = min(p, model.pageCount - 1) }
         if let s = value("--select").flatMap(Int.init) { model.selection = s }
