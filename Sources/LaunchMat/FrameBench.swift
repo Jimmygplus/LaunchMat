@@ -70,7 +70,9 @@ final class FrameLog: NSObject {
 enum FrameBench {
     static func run(model: LaunchpadModel) -> Never {
         model.persistenceEnabled = false
+        let loadStart = CACurrentMediaTime()
         model.load(sync: true)
+        print(String(format: "fps load: %d apps with icons in %.0f ms", model.icons.count, (CACurrentMediaTime() - loadStart) * 1000))
         model.prepareWallpapers()
         let controller = LaunchWindowController(model: model)
         FrameLog.shared.enabled = true

@@ -165,6 +165,7 @@ final class LaunchpadModel: ObservableObject {
             let missing = Array(apps.keys)
             icons.merge(Self.loadIcons(missing, pixels: iconPixels)) { $1 }
             renderedIconPixels = iconPixels
+            if persistenceEnabled { pruneIconCache() }
             return
         }
         guard !scanning else { return }
@@ -203,7 +204,10 @@ final class LaunchpadModel: ObservableObject {
 
     private func finishScan(_ batch: IconBatch) {
         if !batch.images.isEmpty { icons.merge(batch.images) { $1 } }
-        if renderedIconPixels == 0 { renderedIconPixels = iconPixels }
+        if renderedIconPixels == 0 {
+            renderedIconPixels = iconPixels
+            pruneIconCache()
+        }
         scanning = false
     }
 
@@ -232,15 +236,23 @@ final class LaunchpadModel: ObservableObject {
 
     private func replaceIcons(_ batch: IconBatch) {
         icons.merge(batch.images) { $1 }
+        pruneIconCache()
     }
 
     /// Each icon is drawn once, off the main thread, into a bitmap exactly as large as it appears, so showing a page
     /// only copies pixels: nothing is rendered on demand when a page first scrolls into view.
+    /// Bitmaps already drawn at this size come from the disk cache (IconCache).
     nonisolated private static func loadIcons(_ paths: [String], pixels: Int) -> [String: NSImage] {
         var out: [String: NSImage] = [:]
         for path in paths {
+            let key = IconCache.key(path: path, pixels: pixels)
+            if let cached = IconCache.load(key) {
+                out[path] = NSImage(cgImage: cached, size: NSSize(width: pixels, height: pixels))
+                continue
+            }
             let source = NSWorkspace.shared.icon(forFile: path)
             if let bitmap = render(source, pixels: pixels) {
+                IconCache.store(bitmap, as: key)
                 out[path] = NSImage(cgImage: bitmap, size: NSSize(width: pixels, height: pixels))
             } else {
                 source.size = NSSize(width: 256, height: 256)
@@ -248,6 +260,12 @@ final class LaunchpadModel: ObservableObject {
             }
         }
         return out
+    }
+
+    /// After a full load: drop cached icons of apps that are gone or changed, and of other sizes.
+    private func pruneIconCache() {
+        let keep = Set(apps.keys.map { IconCache.key(path: $0, pixels: renderedIconPixels) })
+        Task.detached(priority: .background) { IconCache.prune(keeping: keep) }
     }
 
     nonisolated private static func render(_ image: NSImage, pixels: Int) -> CGImage? {
