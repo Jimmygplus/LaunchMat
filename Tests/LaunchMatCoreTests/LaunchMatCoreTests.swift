@@ -446,3 +446,32 @@ final class PagingTests: XCTestCase {
         XCTAssertEqual(Paging.turn(offset: 0, threshold: 50, settling: true), 0)
     }
 }
+
+final class MenuActionTests: XCTestCase {
+    func testNamesSurviveCodingAndOldFilesLoad() throws {
+        var l = PadLayout(pages: [[.app("/A.app")]])
+        l.names["/A.app"] = "Mail (work)"
+        let data = try JSONEncoder().encode(l)
+        XCTAssertEqual(try JSONDecoder().decode(PadLayout.self, from: data).names, ["/A.app": "Mail (work)"])
+        let old = Data(#"{"version":1,"pages":[["app:/A.app"]]}"#.utf8)
+        XCTAssertEqual((try? JSONDecoder().decode(PadLayout.self, from: old))?.names ?? ["x": "y"], [:])
+    }
+
+    func testMoveToPageAppendsAndCascades() {
+        var l = PadLayout(pages: [[.app("a"), .app("b")], [.app("c"), .app("d")]])
+        l.moveToPage(.app("a"), page: 1, capacity: 2)
+        XCTAssertEqual(l.pages, [[.app("b")], [.app("c"), .app("d")], [.app("a")]])
+        l.moveToPage(.app("b"), page: 4, capacity: 2)
+        XCTAssertEqual(l.locate(.app("b"))?.page, 4)
+    }
+
+    func testMoveAppIntoAndBetweenFolders() {
+        var l = PadLayout(pages: [[.app("a"), .app("b"), .app("c"), .app("d")]])
+        let f = l.merge(app: "b", onto: .app("a"), newFolderName: "F")!
+        let g = l.merge(app: "d", onto: .app("c"), newFolderName: "G")!
+        l.moveApp("c", toFolder: f)
+        XCTAssertEqual(l.folders[f]?.apps, ["a", "b", "c"])
+        XCTAssertNil(l.folders[g], "a folder left with one app dissolves")
+        XCTAssertNotNil(l.locate(.app("d")))
+    }
+}

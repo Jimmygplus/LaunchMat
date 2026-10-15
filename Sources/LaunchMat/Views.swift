@@ -79,6 +79,11 @@ struct RootView: View {
                 }
             }
             .coordinateSpace(name: "root")
+            .alert("Rename", isPresented: Binding(get: { model.renaming != nil }, set: { if !$0 { model.renaming = nil } })) {
+                RenameFields(model: model)
+            } message: {
+                Text("Shown in the grid and found by search. Leave it empty for the app’s own name.")
+            }
             .onAppear {
                 model.metrics = m
                 searchFocused = true
@@ -232,6 +237,22 @@ struct MergePlate: View {
     }
 }
 
+/// The Rename… sheet's field and buttons.
+struct RenameFields: View {
+    @ObservedObject var model: LaunchpadModel
+    @State private var name = ""
+
+    var body: some View {
+        TextField("Name", text: $name)
+            .onAppear { name = model.renaming.map { model.title(for: .app($0)) } ?? "" }
+        Button("Rename") {
+            if let path = model.renaming { model.rename(path, to: name) }
+            model.renaming = nil
+        }
+        Button("Cancel", role: .cancel) { model.renaming = nil }
+    }
+}
+
 /// A shape covering a centred column of the view, for hit-testing only the icon's column of a cell.
 struct CenteredColumn: Shape {
     let width: CGFloat
@@ -353,40 +374,6 @@ struct EntryCell: View {
                     }
                 }
         )
-        .contextMenu { EntryMenu(model: model, entry: entry, folder: nil) }
-    }
-}
-
-struct EntryMenu: View {
-    @ObservedObject var model: LaunchpadModel
-    let entry: Entry
-    let folder: UUID?
-
-    var body: some View {
-        let multi = folder == nil && model.selected.count > 1 && model.selected.contains(entry)
-        if multi {
-            let apps = model.selectedApps.count
-            Button("New Folder with \(apps) Apps") { model.groupSelected() }.disabled(apps < 2)
-            Button("Hide \(apps) Apps") { model.hideSelected() }.disabled(apps == 0)
-            Divider()
-            Button("Deselect All") { model.selected.removeAll() }
-        } else {
-            switch entry {
-            case .app(let path):
-                Button("Open") { model.launch(path) }
-                Button("Show in Finder") { model.showInFinder(path) }
-                if let folder {
-                    Button("Remove from Folder") { model.removeFromFolder(path, folder: folder) }
-                }
-                Divider()
-                Button("Hide") { model.hide(path) }
-                if model.canUninstall(path) {
-                    Button("Move to Trash…") { model.uninstall(path) }
-                }
-            case .folder:
-                Button("Open Folder") { model.activate(entry) }
-            }
-        }
     }
 }
 
@@ -546,7 +533,6 @@ struct FolderAppCell: View {
                     }
                 }
         )
-        .contextMenu { EntryMenu(model: model, entry: .app(path), folder: folderID) }
     }
 }
 

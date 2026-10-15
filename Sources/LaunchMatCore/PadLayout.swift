@@ -63,16 +63,19 @@ public struct PadLayout: Codable, Equatable, Sendable {
     public var hidden: Set<String>
     /// First time each currently-missing app was not found.
     public var missingSince: [String: Date]
+    /// Names the user gave apps (Rename…), by app path; shown instead of the app's own name and searchable.
+    public var names: [String: String]
 
     public init(pages: [[Entry]] = [[]], folders: [UUID: Folder] = [:], hidden: Set<String> = [],
-                missingSince: [String: Date] = [:]) {
+                missingSince: [String: Date] = [:], names: [String: String] = [:]) {
         self.pages = pages
         self.folders = folders
         self.hidden = hidden
         self.missingSince = missingSince
+        self.names = names
     }
 
-    private enum CodingKeys: String, CodingKey { case version, pages, folders, hidden, missingSince }
+    private enum CodingKeys: String, CodingKey { case version, pages, folders, hidden, missingSince, names }
 
     /// Tolerant: absent keys get defaults so hand edits and older/newer files still load.
     public init(from decoder: Decoder) throws {
@@ -82,6 +85,7 @@ public struct PadLayout: Codable, Equatable, Sendable {
         folders = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         hidden = try c.decodeIfPresent(Set<String>.self, forKey: .hidden) ?? []
         missingSince = try c.decodeIfPresent([String: Date].self, forKey: .missingSince) ?? [:]
+        names = try c.decodeIfPresent([String: String].self, forKey: .names) ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -92,6 +96,29 @@ public struct PadLayout: Codable, Equatable, Sendable {
                      forKey: .folders)
         try c.encode(hidden.sorted(), forKey: .hidden)
         try c.encode(missingSince, forKey: .missingSince)
+        if !names.isEmpty { try c.encode(names, forKey: .names) }
+    }
+
+    /// Moves an item to the end of a page (Move to ▸ Page N); an app inside a folder leaves the folder first.
+    public mutating func moveToPage(_ entry: Entry, page: Int, capacity: Int) {
+        if case .app(let path) = entry, let id = folder(containing: path) {
+            removeApp(path, fromFolder: id)
+            dissolveIfNeeded(id)
+        }
+        remove(entry)
+        while pages.count <= page { pages.append([]) }
+        insert(entry, page: page, index: pages[page].count, capacity: capacity)
+    }
+
+    /// Moves an app into a folder (Move to ▸ folder), at its end.
+    public mutating func moveApp(_ app: String, toFolder id: UUID) {
+        guard folders[id] != nil, folders[id]?.apps.contains(app) == false else { return }
+        if let from = folder(containing: app) {
+            removeApp(app, fromFolder: from)
+            dissolveIfNeeded(from)
+        }
+        remove(.app(app))
+        folders[id]?.apps.append(app)
     }
 
     public var isEmpty: Bool { pages.allSatisfy(\.isEmpty) }

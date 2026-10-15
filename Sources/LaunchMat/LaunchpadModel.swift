@@ -374,7 +374,7 @@ final class LaunchpadModel: ObservableObject {
 
     func title(for entry: Entry) -> String {
         switch entry {
-        case .app(let path): return apps[path]?.name ?? (path as NSString).lastPathComponent
+        case .app(let path): return layout.names[path] ?? apps[path]?.name ?? (path as NSString).lastPathComponent
         case .folder(let id): return layout.folders[id]?.name ?? ""
         }
     }
@@ -423,7 +423,12 @@ final class LaunchpadModel: ObservableObject {
         var order: [String: Int] = [:]
         for (i, path) in layout.orderedApps.enumerated() { order[path] = i }
         let pool = apps.values.filter { !layout.hidden.contains($0.id) }
-        results = Search.rank(pool, query: q, keys: \.keys, order: { order[$0.id] ?? Int.max })
+        // A name the user gave an app is searched first, then the app's own names.
+        let names = layout.names
+        results = Search.rank(pool, query: q, keys: { app in
+            guard let custom = names[app.id] else { return app.keys }
+            return SearchKeys(fields: Search.keys(name: custom, altName: custom).fields + app.keys.fields)
+        }, order: { order[$0.id] ?? Int.max })
         if keepPage {
             currentPage = min(currentPage, pageCount - 1)
             return
@@ -458,6 +463,47 @@ final class LaunchpadModel: ObservableObject {
             currentPage = min(currentPage, pageCount - 1)
         }
         scheduleSave()
+    }
+
+    // MARK: - Menu actions (see EntryMenu)
+
+    /// The app that is running from this bundle, if any.
+    func runningApp(_ path: String) -> NSRunningApplication? {
+        let target = URL(fileURLWithPath: path).standardizedFileURL
+        return NSWorkspace.shared.runningApplications.first { $0.bundleURL?.standardizedFileURL == target }
+    }
+
+    /// Rename…: the app shows (and is found) under this name; an empty name goes back to the app's own.
+    @Published var renaming: String?
+
+    func rename(_ path: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == apps[path]?.name { layout.names[path] = nil } else { layout.names[path] = trimmed }
+        updateSearch(keepPage: true)
+        scheduleSave()
+    }
+
+    func move(_ entries: [Entry], toPage page: Int) {
+        withAnimation(Self.reflow) {
+            for entry in entries { layout.moveToPage(entry, page: page, capacity: capacity) }
+            layout.compact()
+            selected.removeAll()
+        }
+        scheduleSave()
+    }
+
+    func move(_ apps: [String], toFolder id: UUID) {
+        withAnimation(Self.reflow) {
+            for app in apps { layout.moveApp(app, toFolder: id) }
+            layout.compact()
+            selected.removeAll()
+        }
+        scheduleSave()
+    }
+
+    /// The pages and folders an item can be moved to.
+    var folderList: [(id: UUID, name: String)] {
+        layout.folders.values.map { ($0.id, $0.name) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     func groupSelected() {
@@ -627,6 +673,31 @@ final class LaunchpadModel: ObservableObject {
         var t = Transaction()
         t.disablesAnimations = true
         withTransaction(t) { pager.x = Paging.follow(d, width: metrics.size.width) }
+    }
+
+    /// The icon under a point (root coordinates): an app in the open folder (with that folder), or an item on the
+    /// showing page. Nil on blank space.
+    func entry(at p: CGPoint) -> (entry: Entry, folder: UUID?)? {
+        if let id = openFolder {
+            let panel = folderPanel(for: id)
+            let font = max(11, min(14, panel.iconSize * 0.12))
+            for (i, path) in (layout.folders[id]?.apps ?? []).enumerated() {
+                let frame = IconPress.frame(center: panel.center(i), iconSize: panel.iconSize,
+                                            cellWidth: panel.cell.width * 0.94, height: panel.iconSize + 6 + font * 1.3)
+                if frame.contains(p) { return (.app(path), id) }
+            }
+            return nil
+        }
+        let m = metrics
+        let items: [Entry] = isSearching
+            ? results.dropFirst(currentPage * capacity).prefix(capacity).map { .app($0.id) }
+            : (currentPage < layout.pages.count ? layout.pages[currentPage] : [])
+        for (slot, entry) in items.enumerated() {
+            let frame = IconPress.frame(center: m.cellCenter(slot), iconSize: m.iconSize, cellWidth: m.cell.width * 0.94,
+                                        height: m.contentHeight + 12)
+            if frame.contains(p) { return (entry, nil) }
+        }
+        return nil
     }
 
     /// True when a point (root coordinates) is on blank space of the showing page: not on an icon's column and not

@@ -65,14 +65,21 @@ final class LaunchWindowController: NSObject {
             }
             return handled ? nil : event
         } as Any)
-        monitors.append(NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+        // Right-click, or Control-click, opens a menu: the icon's own, or on blank space the main menu.
+        monitors.append(NSEvent.addLocalMonitorForEvents(matching: [.rightMouseDown, .leftMouseDown]) { [weak self] event in
+            if event.type == .leftMouseDown && !event.modifierFlags.contains(.control) { return event }
             nonisolated(unsafe) let e = event
             let handled = MainActor.assumeIsolated { () -> Bool in
-                guard let self, self.isVisible, e.window === self.window, self.model.openFolder == nil,
-                      let view = self.window.contentView, let menu = self.mainMenu?() else { return false }
+                guard let self, self.isVisible, e.window === self.window, self.model.drag == nil,
+                      let view = self.window.contentView else { return false }
                 let p = view.convert(e.locationInWindow, from: nil)
                 let root = CGPoint(x: p.x, y: view.isFlipped ? p.y : view.bounds.height - p.y)
-                guard self.model.isBlank(at: root) else { return false } // icons keep their own menu
+                // An icon: its own menu, built now. Blank space: the main menu (not over an open folder).
+                if let hit = self.model.entry(at: root) {
+                    EntryMenu.make(model: self.model, entry: hit.entry, folder: hit.folder).popUp(positioning: nil, at: p, in: view)
+                    return true
+                }
+                guard self.model.openFolder == nil, self.model.isBlank(at: root), let menu = self.mainMenu?() else { return false }
                 menu.popUp(positioning: nil, at: p, in: view)
                 return true
             }
