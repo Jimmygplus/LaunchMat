@@ -3,16 +3,6 @@ import CoreGraphics
 public enum HotCorner: String, CaseIterable, Sendable {
     case off, topLeft, topRight, bottomLeft, bottomRight
 
-    public var title: String {
-        switch self {
-        case .off: return "Off"
-        case .topLeft: return "Top Left"
-        case .topRight: return "Top Right"
-        case .bottomLeft: return "Bottom Left"
-        case .bottomRight: return "Bottom Right"
-        }
-    }
-
     /// `point` and `frame` in AppKit screen coordinates (origin bottom-left).
     public func contains(_ point: CGPoint, in frame: CGRect, tolerance: CGFloat = 3) -> Bool {
         let left = point.x <= frame.minX + tolerance
@@ -60,14 +50,6 @@ public struct HotCornerTrigger: Sendable {
 
 public enum PinchFingers: String, CaseIterable, Sendable {
     case off, three, fourOrFive
-
-    public var title: String {
-        switch self {
-        case .off: return "Off"
-        case .three: return "Pinch with 3 Fingers"
-        case .fourOrFive: return "Pinch with Thumb and 3 Fingers"
-        }
-    }
 
     public var range: ClosedRange<Int>? {
         switch self {

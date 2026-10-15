@@ -24,7 +24,8 @@ enum Uninstaller {
     /// Asks, then trashes. `completion(true)` when the app bundle is gone.
     static func confirmAndUninstall(_ app: AppRecord, installed: [AppRecord], completion: @escaping (Bool) -> Void) {
         if let id = app.bundleID, !NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty {
-            alert("“\(app.name)” is running", "Quit it first, then try again.")
+            let name = app.name
+            alert(L("uninstall.running.title", "“\(name)” is running"), L("uninstall.running.body", "Quit it first, then try again."))
             completion(false)
             return
         }
@@ -33,18 +34,23 @@ enum Uninstaller {
         let a = NSAlert()
         a.alertStyle = .warning
         a.icon = NSWorkspace.shared.icon(forFile: app.id)
-        a.messageText = "Move “\(app.name)” to the Trash?"
+        let name = app.name
+        a.messageText = L("uninstall.title", "Move “\(name)” to the Trash?")
         if related.isEmpty {
-            a.informativeText = "No related files were found in your Library folder."
+            a.informativeText = L("uninstall.noFiles", "No related files were found in your Library folder.")
         } else {
             let list = related.prefix(12).map { "• " + $0.path.replacingOccurrences(of: home, with: "~") }.joined(separator: "\n")
-            let more = related.count > 12 ? "\n… and \(related.count - 12) more" : ""
-            a.informativeText = "Related files found:\n\(list)\(more)\n\nEverything goes to the Trash, so you can put it back."
+            let extra = related.count - 12
+            let more = extra > 0 ? "\n" + L("uninstall.more", "… and \(extra) more") : ""
+            a.informativeText = L("uninstall.found", "Related files found:") + "\n\(list)\(more)\n\n"
+                + L("uninstall.putBack", "Everything goes to the Trash, so you can put it back.")
         }
         // The safer choice is the default button.
-        a.addButton(withTitle: related.isEmpty ? "Move to Trash" : "Move App Only")
-        if !related.isEmpty { a.addButton(withTitle: "Move App and \(related.count) Files") }
-        a.addButton(withTitle: "Cancel")
+        let fileCount = related.count
+        a.addButton(withTitle: related.isEmpty ? L("uninstall.trash", "Move to Trash") : L("uninstall.appOnly", "Move App Only"))
+        if fileCount == 1 { a.addButton(withTitle: L("uninstall.appAndOne", "Move App and 1 File")) }
+        if fileCount > 1 { a.addButton(withTitle: L("uninstall.appAndFiles", "Move App and \(fileCount) Files")) }
+        a.addButton(withTitle: L("common.cancel", "Cancel"))
         NSApp.activate(ignoringOtherApps: true)
         let response = a.runModal()
         let files: [URL]
@@ -59,7 +65,7 @@ enum Uninstaller {
             let appGone = !FileManager.default.fileExists(atPath: app.id)
             if !failed.isEmpty {
                 let names = failed.map { $0.path.replacingOccurrences(of: home, with: "~") }.joined(separator: "\n")
-                alert("Some items could not be moved to the Trash", names)
+                alert(L("uninstall.failed", "Some items could not be moved to the Trash"), names)
             }
             completion(appGone)
         }

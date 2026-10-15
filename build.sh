@@ -23,6 +23,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/LaunchMat"
 cp Support/Info.plist "$APP/Contents/Info.plist"
+# Interface text in other languages (Support/<lang>.lproj/Localizable.strings); English is built in.
+for lproj in Support/*.lproj(N); do cp -R "$lproj" "$APP/Contents/Resources/"; done
 # Test builds name their commit in About (a trailing + means uncommitted changes); release.sh removes it again.
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
 [[ -n "$(git status --porcelain 2>/dev/null)" ]] && COMMIT="$COMMIT+"

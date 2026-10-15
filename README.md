@@ -76,6 +76,13 @@ The checks that need a person at the trackpad are listed in [TESTING.md](TESTING
   - `WindowController`: full-screen overlay window and Carbon hotkey.
   - `Triggers`: hot corner, pinch event tap, launch at login.
   - `Uninstaller`, `AppScanner`, `AppDelegate`: menu bar.
+  - `SettingsWindow`, `GuideWindow`, `WhatsNew`, `EntryMenu`: settings, welcome guide, update card, right-click menus.
+  - `Strings`: every piece of interface text goes through `L("key", "English")`.
+
+## Translations
+The app's text is English, written in the code next to a stable key. To add a language, run
+`./scripts/strings-template.sh > Support/<lang>.lproj/Localizable.strings` (for example `zh-Hans`) and translate the
+right-hand sides; `build.sh` copies the folder into the app. Keys you leave out stay in English.
 
 ## License
 [GPL-3.0](LICENSE). LaunchMat is free software, and so are its forks.

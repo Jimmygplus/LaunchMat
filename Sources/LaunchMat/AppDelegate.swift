@@ -77,12 +77,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         else { return }
         UserDefaults.standard.set(true, forKey: key)
         let alert = NSAlert()
-        alert.messageText = "LaunchGrid is now LaunchMat"
-        alert.informativeText = "Your pages, folders and settings came along. The old LaunchGrid app is still in "
-            + "\(old.deletingLastPathComponent().path), and running both means two grids on the same hotkey. "
-            + "Move LaunchGrid to the Trash? If you used Launch at Login, turn it on again in the LaunchMat menu."
-        alert.addButton(withTitle: "Move to Trash")
-        alert.addButton(withTitle: "Keep It")
+        let folder = old.deletingLastPathComponent().path
+        alert.messageText = L("rename.title", "LaunchGrid is now LaunchMat")
+        alert.informativeText = L("rename.body", "Your pages, folders and settings came along. The old LaunchGrid app is still in \(folder), and running both means two grids on the same hotkey. Move LaunchGrid to the Trash? If you used Launch at Login, turn it on again in LaunchMat’s Settings.")
+        alert.addButton(withTitle: L("rename.trash", "Move to Trash"))
+        alert.addButton(withTitle: L("rename.keep", "Keep It"))
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         for app in NSRunningApplication.runningApplications(withBundleIdentifier: RenameMigration.oldBundleID) { app.terminate() }
@@ -207,24 +206,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
         if menu.identifier?.rawValue == "main" {
-            menu.addItem(item("Settings…", #selector(showSettings), key: ",", symbol: "gearshape"))
+            menu.addItem(item(L("menu.settings", "Settings…"), #selector(showSettings), key: ",", symbol: "gearshape"))
             menu.addItem(.separator())
             let hidden = model.layout.hidden.count
-            menu.addItem(item(hidden > 0 ? "Hidden Apps (\(hidden))…" : "Hidden Apps…", #selector(showHiddenApps), symbol: "eye.slash"))
-            menu.addItem(submenu("Grid Size", symbol: "square.grid.2x2", GridSize.presets.enumerated().map { i, size in
+            menu.addItem(item(hidden > 0 ? L("menu.hiddenAppsCount", "Hidden Apps (\(hidden))…") : L("menu.hiddenApps", "Hidden Apps…"),
+                              #selector(showHiddenApps), symbol: "eye.slash"))
+            menu.addItem(submenu(L("menu.gridSize", "Grid Size"), symbol: "square.grid.2x2", GridSize.presets.enumerated().map { i, size in
                 item(size.label, #selector(pickGrid(_:)), tag: i, on: size == model.gridSize)
             }))
             menu.addItem(.separator())
-            menu.addItem(item("About LaunchMat", #selector(showAbout), symbol: "info.circle"))
-            menu.addItem(item("Restart LaunchMat", #selector(restart), symbol: "arrow.clockwise"))
-            menu.addItem(item("Quit LaunchMat", #selector(quit), symbol: "power"))
+            menu.addItem(item(L("menu.about", "About LaunchMat"), #selector(showAbout), symbol: "info.circle"))
+            menu.addItem(item(L("menu.restart", "Restart LaunchMat"), #selector(restart), symbol: "arrow.clockwise"))
+            menu.addItem(item(L("menu.quit", "Quit LaunchMat"), #selector(quit), symbol: "power"))
         } else {
-            menu.addItem(item("Open LaunchMat", #selector(showGrid)))
-            menu.addItem(item("Settings…", #selector(showSettings), key: ","))
-            menu.addItem(item("Send Feedback…", #selector(sendFeedback)))
-            menu.addItem(item("About LaunchMat", #selector(showAbout)))
+            menu.addItem(item(L("menu.open", "Open LaunchMat"), #selector(showGrid)))
+            menu.addItem(item(L("menu.settings", "Settings…"), #selector(showSettings), key: ","))
+            menu.addItem(item(L("menu.feedback", "Send Feedback…"), #selector(sendFeedback)))
+            menu.addItem(item(L("menu.about", "About LaunchMat"), #selector(showAbout)))
             menu.addItem(.separator())
-            menu.addItem(item("Quit LaunchMat", #selector(confirmQuit), key: "q"))
+            menu.addItem(item(L("menu.quit", "Quit LaunchMat"), #selector(confirmQuit), key: "q"))
         }
     }
 
@@ -258,10 +258,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Quitting from the menu bar asks first: without the app running, the hotkey and the menu bar icon are gone too.
     @objc private func confirmQuit() {
         let alert = NSAlert()
-        alert.messageText = "Quit LaunchMat?"
-        alert.informativeText = "The hotkey, hot corner and menu bar icon stop working until you open LaunchMat again."
-        alert.addButton(withTitle: "Quit")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L("quit.title", "Quit LaunchMat?")
+        alert.informativeText = L("quit.body", "The hotkey, hot corner and menu bar icon stop working until you open LaunchMat again.")
+        alert.addButton(withTitle: L("quit.quit", "Quit"))
+        alert.addButton(withTitle: L("common.cancel", "Cancel"))
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn { NSApp.terminate(nil) }
     }
@@ -294,22 +294,31 @@ extension AppDelegate: AppActions, GuideActions {
     func setPinch(_ fingers: PinchFingers) {
         Settings.pinch = fingers
         if fingers == .fourOrFive && PinchMonitor.systemFourFingerPinchEnabled {
-            Uninstaller.alert("The system four-finger pinch is on",
-                              "macOS also uses this gesture. Turn off System Settings › Trackpad › More Gestures › "
-                                  + "“Launchpad” / “Apps” so only LaunchMat responds.")
+            Uninstaller.alert(L("pinchConflict.title", "The system four-finger pinch is on"),
+                              L("pinchConflict.body", "macOS also uses this gesture. Turn off System Settings › Trackpad › More Gestures › “Launchpad” / “Apps” so only LaunchMat responds."))
         }
         if fingers != .off && !PinchMonitor.isTrusted {
-            Uninstaller.alert("Allow LaunchMat in Accessibility",
-                              "Reading trackpad gestures system-wide needs Accessibility permission. "
-                                  + "Turn on LaunchMat in System Settings › Privacy & Security › Accessibility; "
-                                  + "the pinch starts working right away.")
+            let alert = NSAlert()
+            alert.messageText = L("accessibility.title", "Allow LaunchMat in Accessibility")
+            alert.informativeText = L("accessibility.body", "LaunchMat needs this only to read the trackpad pinch.")
+            alert.addButton(withTitle: L("accessibility.open", "Open System Settings"))
+            alert.addButton(withTitle: L("common.cancel", "Cancel"))
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                // Puts LaunchMat in the list (macOS shows its own prompt the first time), then opens the list.
+                PinchMonitor.requestTrust()
+                openAccessibilitySettings()
+            }
         }
-        startPinch(prompt: true)
+        // Starts now if allowed, otherwise as soon as it is.
+        startPinch(prompt: false)
     }
+
+    func setGridSize(_ size: GridSize) { model.setGrid(size) }
 
     func setLaunchAtLogin(_ on: Bool) {
         if let error = LoginItem.set(on) {
-            Uninstaller.alert("Could not change Launch at Login", error)
+            Uninstaller.alert(L("login.error", "Could not change Launch at Login"), error)
         }
     }
 
@@ -329,10 +338,10 @@ extension AppDelegate: AppActions, GuideActions {
 
     func confirmResetLayout() {
         let alert = NSAlert()
-        alert.messageText = "Reset the layout?"
-        alert.informativeText = "Folders, your custom order and hidden apps will be replaced by the default arrangement."
-        alert.addButton(withTitle: "Reset")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L("reset.title", "Reset your layout?")
+        alert.informativeText = L("reset.body", "Your pages, folders and hidden apps go back to the default arrangement.")
+        alert.addButton(withTitle: L("reset.reset", "Reset"))
+        alert.addButton(withTitle: L("common.cancel", "Cancel"))
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn { model.resetLayout() }
     }
@@ -343,20 +352,21 @@ extension AppDelegate: AppActions, GuideActions {
             guard let path = LegacyLaunchpad.defaultPath else { throw LegacyLaunchpad.ReadError.notFound("(unknown)") }
             pages = try LegacyLaunchpad.read(path: path)
         } catch {
-            Uninstaller.alert("Nothing to import", "\(error)\n\nThis only works on a Mac that used Launchpad before macOS 26.")
+            Uninstaller.alert(L("import.nothing.title", "Nothing to import"),
+                              "\(error)\n\n" + L("import.nothing.body", "This only works on a Mac that used Launchpad before macOS 26."))
             return false
         }
         let folders = pages.flatMap { $0 }.filter { if case .folder = $0 { return true } else { return false } }.count
         let alert = NSAlert()
-        alert.messageText = "Import the system Launchpad layout?"
-        alert.informativeText = "Found \(pages.count) pages and \(folders) folders. Your current LaunchMat layout "
-            + "will be replaced; apps Launchpad didn't know about are added at the end."
-        alert.addButton(withTitle: "Import")
-        alert.addButton(withTitle: "Cancel")
+        let pageCount = pages.count
+        alert.messageText = L("import.title", "Import the system Launchpad layout?")
+        alert.informativeText = L("import.body", "Found \(pageCount) pages and \(folders) folders. Your current LaunchMat layout will be replaced; apps Launchpad didn’t know about are added at the end.")
+        alert.addButton(withTitle: L("import.import", "Import"))
+        alert.addButton(withTitle: L("common.cancel", "Cancel"))
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return false }
         let placed = model.applyImported(pages)
-        Uninstaller.alert("Imported", "\(placed) apps placed from the Launchpad layout.")
+        Uninstaller.alert(L("import.done.title", "Imported"), L("import.done.body", "\(placed) apps placed from the Launchpad layout."))
         return true
     }
 }

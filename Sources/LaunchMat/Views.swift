@@ -37,8 +37,8 @@ struct RootView: View {
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(.white.opacity(0.8))
-                        .help("Menu")
-                        .accessibilityLabel("Menu")
+                        .help(L("grid.menu", "Menu"))
+                        .accessibilityLabel(L("grid.menu", "Menu"))
                     }
                     .padding(.leading, 38) // keeps the search field itself centred
                     .position(x: geo.size.width / 2, y: m.topInset * 0.5)
@@ -46,7 +46,7 @@ struct RootView: View {
                     PagerSlide(pager: model.pager, width: geo.size.width) { PagerView(model: model, metrics: m) }
 
                     if model.isSearching && model.results.isEmpty {
-                        Text("No Results")
+                        Text(L("search.noResults", "No Results"))
                             .font(.system(size: 22, weight: .medium))
                             .foregroundStyle(.white.opacity(0.75))
                             .position(x: geo.size.width / 2, y: geo.size.height / 2)
@@ -92,10 +92,10 @@ struct RootView: View {
                 }
             }
             .coordinateSpace(name: "root")
-            .alert("Rename", isPresented: Binding(get: { model.renaming != nil }, set: { if !$0 { model.renaming = nil } })) {
+            .alert(L("rename.alertTitle", "Rename"), isPresented: Binding(get: { model.renaming != nil }, set: { if !$0 { model.renaming = nil } })) {
                 RenameFields(model: model)
             } message: {
-                Text("Shown in the grid and found by search. Leave it empty for the app’s own name.")
+                Text(L("rename.alertBody", "Shown in the grid and found by search. Leave it empty for the app’s own name."))
             }
             .onAppear {
                 model.metrics = m
@@ -164,7 +164,7 @@ struct SearchField: View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.white.opacity(0.75))
-            TextField("", text: $text, prompt: Text("Search").foregroundStyle(.white.opacity(0.6)))
+            TextField("", text: $text, prompt: Text(L("search.prompt", "Search")).foregroundStyle(.white.opacity(0.6)))
                 .textFieldStyle(.plain)
                 .foregroundStyle(.white)
                 .focused(focused)
@@ -256,13 +256,13 @@ struct RenameFields: View {
     @State private var name = ""
 
     var body: some View {
-        TextField("Name", text: $name)
+        TextField(L("rename.field", "Name"), text: $name)
             .onAppear { name = model.renaming.map { model.title(for: .app($0)) } ?? "" }
-        Button("Rename") {
+        Button(L("rename.button", "Rename")) {
             if let path = model.renaming { model.rename(path, to: name) }
             model.renaming = nil
         }
-        Button("Cancel", role: .cancel) { model.renaming = nil }
+        Button(L("common.cancel", "Cancel"), role: .cancel) { model.renaming = nil }
     }
 }
 
@@ -485,7 +485,7 @@ struct FolderOverlay: View {
                 .onTapGesture {}
                 .position(x: panel.frame.midX, y: panel.frame.midY)
 
-            TextField("Folder", text: model.folderNameBinding(folderID))
+            TextField(L("folder.namePlaceholder", "Folder"), text: model.folderNameBinding(folderID))
                 .textFieldStyle(.plain)
                 .font(.system(size: 24, weight: .semibold))
                 .multilineTextAlignment(.center)
@@ -576,7 +576,7 @@ struct UninstallBadge: View {
         }
         .buttonStyle(.plain)
         .offset(x: -size * 0.02, y: -size * 0.02)
-        .help("Move to Trash")
+        .help(L("grid.trashBadge", "Move to Trash"))
     }
 }
 

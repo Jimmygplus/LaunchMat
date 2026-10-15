@@ -18,7 +18,7 @@ final class GuideWindowController: NSWindowController, NSWindowDelegate {
     }
 
     init(model: LaunchpadModel, actions: GuideActions) {
-        state = GuideState(actions: actions)
+        state = GuideState(actions: actions, gridSize: model.gridSize)
         let window = GuideWindow(contentRect: NSRect(x: 0, y: 0, width: GuideMetrics.size.width, height: GuideMetrics.size.height),
                                  styleMask: [.borderless], backing: .buffered, defer: false)
         window.isOpaque = false
@@ -64,6 +64,7 @@ protocol GuideActions: AnyObject {
     func setHotCorner(_ corner: HotCorner)
     func setPinch(_ fingers: PinchFingers)
     func setLaunchAtLogin(_ on: Bool)
+    func setGridSize(_ size: GridSize)
     /// Returns true when a layout was imported.
     func importLegacyLayout() -> Bool
 }
@@ -99,11 +100,16 @@ final class GuideState: ObservableObject {
     @Published var inDock = Dock.contains(Bundle.main.bundleURL)
     @Published var launchAtLogin = LoginItem.isEnabled
     @Published var imported = false
-    @Published var importNote: String?
+    @Published var gridSize: GridSize
+    /// An old Launchpad database is on this Mac (offered for import on page 2).
+    let legacyFound = LegacyLaunchpad.defaultPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
     let actions: GuideActions
     private var poll: Timer?
 
-    init(actions: GuideActions) { self.actions = actions }
+    init(actions: GuideActions, gridSize: GridSize) {
+        self.actions = actions
+        self.gridSize = gridSize
+    }
 
     func reload() {
         hotkey = Settings.hotkey
@@ -151,7 +157,7 @@ struct GuideView: View {
                 switch state.page {
                 case 0: WelcomePage()
                 case 1: HabitsPage(state: state)
-                case 2: DisplayPage(state: state)
+                case 2: GridPage(state: state)
                 default: DonePage()
                 }
             }
@@ -162,7 +168,7 @@ struct GuideView: View {
             CloseDot(action: close)
                 .position(M.close.center)
 
-            Button(state.page == Self.pages - 1 ? "Get Started" : "Continue") {
+            Button(state.page == Self.pages - 1 ? L("guide.done.button", "Open LaunchMat") : L("guide.continue", "Continue")) {
                 if state.page == Self.pages - 1 {
                     finish()
                 } else {
@@ -171,7 +177,9 @@ struct GuideView: View {
             }
             .buttonStyle(GuideButtonStyle())
             .keyboardShortcut(.defaultAction)
-            .position(x: M.size.width - M.buttonInset - M.button.width / 2, y: M.size.height - M.buttonInset - M.button.height / 2)
+            // Right edge and bottom at the inset, so a wider button grows to the left.
+            .padding([.trailing, .bottom], M.buttonInset)
+            .frame(width: M.size.width, height: M.size.height, alignment: .bottomTrailing)
         }
         .frame(width: M.size.width, height: M.size.height)
         .environment(\.colorScheme, .dark)
@@ -207,7 +215,7 @@ private struct CloseDot: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .accessibilityLabel("Close")
+        .accessibilityLabel(L("guide.close", "Close"))
     }
 }
 
@@ -216,7 +224,10 @@ private struct GuideButtonStyle: ButtonStyle {
         configuration.label
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(GuideMetrics.buttonText)
-            .frame(width: GuideMetrics.button.width, height: GuideMetrics.button.height)
+            // The spec's size; a longer label (another language, "Open LaunchMat") widens it.
+            .padding(.horizontal, 16)
+            .frame(minWidth: GuideMetrics.button.width, minHeight: GuideMetrics.button.height, maxHeight: GuideMetrics.button.height)
+            .fixedSize()
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(GuideMetrics.buttonBackground.opacity(configuration.isPressed ? 0.7 : 1)))
             .contentShape(Rectangle())
@@ -307,8 +318,8 @@ private struct WelcomePage: View {
                 .resizable()
                 .frame(width: 120, height: 120)
                 .position(x: GuideMetrics.size.width / 2, y: 131 + 60)
-            Heading(title: "Welcome to LaunchMat",
-                    subtitle: "Every app on one full-screen grid again, just like the Launchpad you knew.",
+            Heading(title: L("guide.welcome.title", "Welcome to LaunchMat."),
+                    subtitle: L("guide.welcome.body", "Every app you have, on one full-screen grid. Pages, folders and search, the way Launchpad used to work."),
                     titleSize: 25)
                 .offset(x: GuideMetrics.textLeft, y: 376)
         }
@@ -320,17 +331,17 @@ private struct HabitsPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Heading(title: "Keep Your Habits",
-                    subtitle: "Open LaunchMat the way your hands already know.")
+            Heading(title: L("guide.habits.title", "Open it the way you’re used to."),
+                    subtitle: L("guide.habits.body", "⇧⌘Space works from any app. You can also click the Dock icon, add a hot corner, or pinch with your fingers on the trackpad."))
                 .padding(.leading, GuideMetrics.textLeft)
                 .padding(.top, 72)
             VStack(spacing: 10) {
                 CardGroup {
-                    CardRow(title: "Keep LaunchMat in the Dock") {
+                    CardRow(title: L("guide.habits.dock", "Keep LaunchMat in the Dock")) {
                         if state.inDock {
-                            Done(text: "In the Dock")
+                            Done(text: L("guide.habits.inDock", "In the Dock"))
                         } else {
-                            Button("Add to Dock") {
+                            Button(L("guide.habits.addToDock", "Add to Dock")) {
                                 Dock.add(Bundle.main.bundleURL)
                                 state.inDock = Dock.contains(Bundle.main.bundleURL)
                             }
@@ -338,90 +349,102 @@ private struct HabitsPage: View {
                         }
                     }
                 }
-                CardGroup {
-                    CardRow(title: "Pinch on the trackpad") {
-                        if state.pinchOn && state.trusted {
-                            Done(text: "On")
-                        } else {
-                            Button(state.pinchOn ? "Grant Access" : "Turn On") {
-                                if !state.pinchOn {
-                                    state.actions.setPinch(.three)
-                                    state.pinchOn = true
-                                } else {
-                                    PinchMonitor.requestTrust()
-                                }
+                VStack(alignment: .leading, spacing: 6) {
+                    CardGroup {
+                        CardRow(title: L("guide.habits.hotkey", "Hotkey")) {
+                            Picker("", selection: Binding(get: { state.hotkey }, set: { k in
+                                state.hotkey = k
+                                state.actions.setHotkey(k)
+                            })) {
+                                ForEach(HotkeyChoice.allCases, id: \.self) { Text($0.title).tag($0) }
                             }
-                            .buttonStyle(SmallButtonStyle())
+                            .labelsHidden()
+                            .controlSize(.small)
+                            .fixedSize()
+                        }
+                        RowDivider()
+                        CardRow(title: L("guide.habits.hotCorner", "Hot corner")) {
+                            Picker("", selection: Binding(get: { state.hotCorner }, set: { c in
+                                state.hotCorner = c
+                                state.actions.setHotCorner(c)
+                            })) {
+                                ForEach(HotCorner.allCases, id: \.self) { Text($0.title).tag($0) }
+                            }
+                            .labelsHidden()
+                            .controlSize(.small)
+                            .fixedSize()
+                        }
+                        RowDivider()
+                        CardRow(title: L("guide.habits.pinch", "Trackpad pinch")) {
+                            if state.pinchOn && state.trusted {
+                                Done(text: L("guide.habits.pinchOn", "On"))
+                            } else {
+                                Button(state.pinchOn ? L("guide.habits.grant", "Grant Access") : L("guide.habits.turnOn", "Turn On")) {
+                                    if !state.pinchOn {
+                                        state.actions.setPinch(.three)
+                                        state.pinchOn = true
+                                    } else {
+                                        PinchMonitor.requestTrust()
+                                    }
+                                }
+                                .buttonStyle(SmallButtonStyle())
+                            }
                         }
                     }
-                    RowDivider()
-                    CardRow(title: "Hot corner") {
-                        Picker("", selection: Binding(get: { state.hotCorner }, set: { c in
-                            state.hotCorner = c
-                            state.actions.setHotCorner(c)
-                        })) {
-                            ForEach(HotCorner.allCases, id: \.self) { Text($0.title).tag($0) }
-                        }
-                        .labelsHidden()
-                        .controlSize(.small)
-                        .fixedSize()
-                    }
+                    Text(L("guide.habits.pinchNote", "The pinch needs Accessibility permission. LaunchMat asks only when you turn it on."))
+                        .font(.system(size: 11))
+                        .foregroundStyle(GuideMetrics.subtitle)
+                        .padding(.leading, 10)
+                        .frame(width: GuideMetrics.cardWidth, alignment: .leading)
                 }
-                CardGroup {
-                    CardRow(title: "Hotkey") {
-                        Picker("", selection: Binding(get: { state.hotkey }, set: { k in
-                            state.hotkey = k
-                            state.actions.setHotkey(k)
-                        })) {
-                            ForEach(HotkeyChoice.allCases, id: \.self) { Text($0.title).tag($0) }
+                if state.legacyFound {
+                    CardGroup {
+                        CardRow(title: L("guide.habits.legacy", "Your Launchpad layout from before macOS 26 is here.")) {
+                            if state.imported {
+                                Done(text: L("guide.habits.imported", "Imported"))
+                            } else {
+                                Button(L("guide.habits.import", "Import Layout")) {
+                                    state.imported = state.actions.importLegacyLayout()
+                                }
+                                .buttonStyle(SmallButtonStyle())
+                            }
                         }
-                        .labelsHidden()
-                        .controlSize(.small)
-                        .fixedSize()
                     }
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 28)
+            .padding(.top, 24)
         }
     }
 }
 
-private struct DisplayPage: View {
+/// Page 3 sets the grid size, the one display choice the app has today.
+private struct GridPage: View {
     @ObservedObject var state: GuideState
+    private let columns = Array(repeating: GridItem(.fixed(80), spacing: 13), count: 4)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Heading(title: "How It Opens",
-                    subtitle: "LaunchMat fills the screen, over your windows, like Launchpad did.")
+            Heading(title: L("guide.grid.title", "How many apps on a page?"),
+                    subtitle: L("guide.grid.body", "A bigger grid fits more apps on each page. A smaller one gives every icon more room. You can change this later in Settings."))
                 .padding(.leading, GuideMetrics.textLeft)
                 .padding(.top, 72)
-            HStack(spacing: 28) {
-                ModeCard(title: "Full Screen", selected: true, window: false)
-                ModeCard(title: "Window", selected: false, window: true, note: "Coming soon")
-                    .opacity(0.45)
-                    .accessibilityLabel("Window, coming soon")
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 34)
-            Text("The grid takes the whole screen, over a blurred wallpaper.")
-                .font(.system(size: 13))
-                .foregroundStyle(GuideMetrics.title)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 16)
-            CardGroup {
-                CardRow(title: "Bring my old Launchpad layout", height: 38) {
-                    Toggle("", isOn: Binding(get: { state.imported }, set: { on in
-                        guard on, !state.imported else { return }
-                        state.imported = state.actions.importLegacyLayout()
-                    }))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .disabled(state.imported)
+            LazyVGrid(columns: columns, spacing: 13) {
+                ForEach(GridSize.presets, id: \.self) { size in
+                    Button {
+                        state.gridSize = size
+                        state.actions.setGridSize(size)
+                    } label: {
+                        GridChoice(size: size, selected: size == state.gridSize)
+                    }
+                    .buttonStyle(.plain)
                 }
-                RowDivider()
-                CardRow(title: "Open at login", height: 38) {
+            }
+            .frame(width: GuideMetrics.cardWidth)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 28)
+            CardGroup {
+                CardRow(title: L("guide.grid.login", "Launch at login"), height: 38) {
                     Toggle("", isOn: Binding(get: { state.launchAtLogin }, set: { on in
                         state.actions.setLaunchAtLogin(on)
                         state.launchAtLogin = LoginItem.isEnabled
@@ -432,42 +455,34 @@ private struct DisplayPage: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 28)
+            .padding(.top, 24)
         }
     }
 }
 
-/// A small drawing of how the grid shows: our own, not a screenshot.
-private struct ModeCard: View {
-    let title: String
+/// A grid size as a small drawing of its columns and rows, with its label.
+private struct GridChoice: View {
+    let size: GridSize
     let selected: Bool
-    let window: Bool
-    var note: String? = nil
 
     var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                LinearGradient(colors: [Color(red: 0.25, green: 0.2, blue: 0.45), Color(red: 0.1, green: 0.14, blue: 0.3)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(.black.opacity(window ? 0.35 : 0))
-                    .frame(width: window ? 70 : 108, height: window ? 46 : 72)
-                LazyVGrid(columns: Array(repeating: GridItem(.fixed(window ? 6 : 8), spacing: window ? 5 : 7), count: 5),
-                          spacing: window ? 5 : 7) {
-                    ForEach(0..<(window ? 13 : 15), id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 2).fill(.white.opacity(0.7))
-                            .frame(width: window ? 6 : 8, height: window ? 6 : 8)
+        VStack(spacing: 4) {
+            VStack(spacing: 2) {
+                ForEach(0..<size.rows, id: \.self) { _ in
+                    HStack(spacing: 2) {
+                        ForEach(0..<size.cols, id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 1).fill(.white.opacity(selected ? 0.85 : 0.5)).frame(width: 4, height: 4)
+                        }
                     }
                 }
             }
-            .frame(width: 110, height: 74)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .stroke(selected ? Color.accentColor : .clear, lineWidth: 2).padding(-2))
-            Text(note.map { "\(title) · \($0)" } ?? title)
-                .font(.system(size: 13))
-                .foregroundStyle(GuideMetrics.title)
+            .frame(height: 30)
+            Text(size.label).font(.system(size: 12, weight: .medium)).foregroundStyle(GuideMetrics.title)
         }
+        .frame(width: 80, height: 58)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(GuideMetrics.card))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
+        .contentShape(Rectangle())
     }
 }
 
@@ -477,38 +492,16 @@ private struct DonePage: View {
             GuideSparkles()
                 .frame(width: 96, height: 96)
                 .frame(maxWidth: .infinity)
-                .padding(.top, 70)
-            Heading(title: "You’re All Set",
-                    subtitle: "LaunchMat is ready. Two things worth knowing:")
+                .padding(.top, 80)
+            Heading(title: L("guide.done.title", "You’re all set."),
+                    subtitle: L("guide.done.body", "Press ⇧⌘Space to open LaunchMat. Start typing to search. Press Esc to close."))
                 .padding(.leading, GuideMetrics.textLeft)
-                .padding(.top, 30)
-            VStack(alignment: .leading, spacing: 14) {
-                Tip(symbol: "ellipsis.circle",
-                    text: "Click ⋯ next to the search field, or right-click any empty spot, for the main menu.")
-                Tip(symbol: "command",
-                    text: "Hold ⌘ and click apps to pick several, then drag them together or make a folder.")
-            }
-            .frame(width: GuideMetrics.cardWidth - 20, alignment: .leading)
-            .padding(.leading, GuideMetrics.textLeft)
-            .padding(.top, 24)
-        }
-    }
-}
-
-private struct Tip: View {
-    let symbol: String
-    let text: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(GuideMetrics.title)
-                .frame(width: 18)
-            Text(text)
-                .font(.system(size: 13))
-                .foregroundStyle(GuideMetrics.subtitle)
-                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 40)
+            Text(L("guide.done.again", "To see this guide again, open Settings › About."))
+                .font(.system(size: 12))
+                .foregroundStyle(GuideMetrics.subtitle.opacity(0.8))
+                .padding(.leading, GuideMetrics.textLeft)
+                .padding(.top, 18)
         }
     }
 }
@@ -589,11 +582,12 @@ enum GuideSnapshot {
         func setHotCorner(_ corner: HotCorner) {}
         func setPinch(_ fingers: PinchFingers) {}
         func setLaunchAtLogin(_ on: Bool) {}
+        func setGridSize(_ size: GridSize) {}
         func importLegacyLayout() -> Bool { false }
     }
 
     static func run(dir: String) -> Never {
-        let state = GuideState(actions: NoActions())
+        let state = GuideState(actions: NoActions(), gridSize: GridSize.load())
         for page in 0..<GuideView.pages {
             state.page = page
             let host = NSHostingView(rootView: GuideView(state: state, close: {}, finish: {}))

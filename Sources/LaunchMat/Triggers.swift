@@ -130,8 +130,8 @@ enum LoginItem {
     /// Returns an error message, or nil on success.
     static func set(_ on: Bool) -> String? {
         if on, !Bundle.main.bundlePath.hasPrefix("/Applications/") {
-            return "Move LaunchMat to the Applications folder first, then turn this on (it currently runs from "
-                + "\(Bundle.main.bundlePath))."
+            let path = Bundle.main.bundlePath
+            return L("login.notInApplications", "Move LaunchMat to the Applications folder first, then turn this on (it currently runs from \(path)).")
         }
         do {
             if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
@@ -151,7 +151,7 @@ enum HotkeyChoice: String, CaseIterable {
         case .optionSpace: return "⌥Space"
         case .controlOptionSpace: return "⌃⌥Space"
         case .f4: return "F4"
-        case .off: return "Off"
+        case .off: return L("choice.off", "Off")
         }
     }
 

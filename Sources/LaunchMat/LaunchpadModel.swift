@@ -399,7 +399,7 @@ final class LaunchpadModel: ObservableObject {
 
     private func suggestedFolderName(target: Entry, adding app: String) -> String {
         if let path = target.appPath, let c = apps[path]?.category, c == apps[app]?.category { return c }
-        return apps[app]?.category ?? apps[target.appPath ?? ""]?.category ?? "Untitled"
+        return apps[app]?.category ?? apps[target.appPath ?? ""]?.category ?? L("folder.untitled", "Untitled")
     }
 
     // MARK: - Search
@@ -518,7 +518,7 @@ final class LaunchpadModel: ObservableObject {
     func groupSelected() {
         let apps = selectedApps
         guard apps.count >= 2 else { return }
-        let name = apps.compactMap { self.apps[$0]?.category }.first ?? "Untitled"
+        let name = apps.compactMap { self.apps[$0]?.category }.first ?? L("folder.untitled", "Untitled")
         var id: UUID?
         withAnimation(Self.reflow) {
             id = layout.group(apps: apps, name: name, capacity: capacity)

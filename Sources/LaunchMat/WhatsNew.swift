@@ -5,23 +5,33 @@ import SwiftUI
 /// upgrade (a fresh install gets the welcome guide instead). Its picture is drawn by the app: nothing is loaded.
 struct WhatsNew: Equatable {
     let version: String
-    let title: String
-    /// May contain "⌘", drawn as a key cap.
-    let body: String
+    /// One line each; ⌘ is drawn as a key cap.
+    let items: [String]
 
     static let seenKey = "whatsNewSeenVersion"
+
+    var title: String { L("whatsNew.title", "What’s new in LaunchMat \(version)") }
 
     /// The card for the running version, if it has one.
     static var current: WhatsNew? {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-        return cards.first { $0.version == version }
+        switch version {
+        case "0.1.2":
+            var items = [L("whatsNew.0.1.2.pinyin", "Typing wx now finds 微信 even when your Mac’s language is English.")]
+            if cameFromLaunchGrid {
+                items.append(L("whatsNew.0.1.2.rename", "LaunchGrid is now called LaunchMat. Your layout came with you."))
+            }
+            return WhatsNew(version: version, items: items)
+        default:
+            return nil
+        }
     }
 
-    private static let cards = [
-        WhatsNew(version: "0.1.2",
-                 title: "Drop one app on another. A folder.",
-                 body: "Hold an app over another for a moment, then let go. ⌘-click to pick several apps and move them together."),
-    ]
+    /// People updating from LaunchGrid still have its layout file.
+    private static var cameFromLaunchGrid: Bool {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return FileManager.default.fileExists(atPath: support.appendingPathComponent("LaunchGrid/layout.json").path)
+    }
 
     /// Due when this version has a card that hasn't been seen.
     static var due: WhatsNew? {
@@ -43,7 +53,7 @@ struct WhatsNewCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            MergePicture()
+            SearchPicture()
                 .frame(width: 480, height: 236)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .padding(4)
@@ -52,20 +62,25 @@ struct WhatsNewCard: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, 24)
                 .padding(.top, 20)
-            KeyCapText(text: card.body)
-                .font(.system(size: 13))
-                .foregroundStyle(Color(white: 0.72))
-                .lineLimit(2)
-                .truncationMode(.tail)
-                .padding(.horizontal, 24)
-                .padding(.top, 8)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(card.items, id: \.self) { item in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("•")
+                        KeyCapText(text: item).lineLimit(1).truncationMode(.tail)
+                    }
+                }
+            }
+            .font(.system(size: 13))
+            .foregroundStyle(Color(white: 0.72))
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
             Spacer(minLength: 0)
             HStack(spacing: 10) {
                 Spacer()
-                Button("What’s New", action: releaseNotes)
+                Button(L("whatsNew.releaseNotes", "Release Notes"), action: releaseNotes)
                     .buttonStyle(CardButtonStyle(light: false))
                     .frame(width: 122)
-                Button("Got It", action: dismiss)
+                Button(L("whatsNew.ok", "OK"), action: dismiss)
                     .buttonStyle(CardButtonStyle(light: true))
                     .frame(width: 110)
                     .keyboardShortcut(.defaultAction)
@@ -111,44 +126,34 @@ private struct KeyCapText: View {
     }
 }
 
-/// The picture: two app tiles on a dark wallpaper, one lifted onto the other over the merge plate. Our own drawing,
-/// in the stand-in style of the website's demo (no real app icons).
-private struct MergePicture: View {
+/// The picture: the search field with "wx" typed, and the one app it finds. Our own drawing, in the stand-in style of
+/// the website's demo (no real app icons).
+private struct SearchPicture: View {
     var body: some View {
         ZStack {
             LinearGradient(colors: [Color(red: 0.2, green: 0.17, blue: 0.36), Color(red: 0.07, green: 0.09, blue: 0.18)],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
-            HStack(spacing: 46) {
-                Tile(color: Color(red: 0.25, green: 0.56, blue: 0.99), glyph: "N").opacity(0.55)
-                ZStack {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(.white.opacity(0.3))
-                        .frame(width: 86, height: 86)
-                    Tile(color: Color(red: 0.43, green: 0.79, blue: 0.44), glyph: "M")
-                    Tile(color: Color(red: 0.95, green: 0.31, blue: 0.40), glyph: "♪")
-                        .scaleEffect(1.1)
-                        .offset(x: 16, y: -14)
-                        .shadow(color: .black.opacity(0.45), radius: 10, y: 6)
-                    Image(systemName: "cursorarrow")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.5), radius: 2)
-                        .offset(x: 34, y: 6)
+            VStack(spacing: 26) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.white.opacity(0.75))
+                    Text("wx").foregroundStyle(.white)
+                    Rectangle().fill(.white).frame(width: 1.5, height: 16)
+                    Spacer()
                 }
-                Tile(color: Color(red: 0.42, green: 0.38, blue: 0.95), glyph: "P").opacity(0.55)
+                .font(.system(size: 15))
+                .padding(.horizontal, 12)
+                .frame(width: 230, height: 32)
+                .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.8))
+                VStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(LinearGradient(colors: [Color(red: 0.36, green: 0.82, blue: 0.4), Color(red: 0.2, green: 0.62, blue: 0.27)],
+                                             startPoint: .top, endPoint: .bottom))
+                        .frame(width: 70, height: 70)
+                        .overlay(Text("W").font(.system(size: 28, weight: .bold)).foregroundStyle(.white))
+                        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white.opacity(0.18)).padding(-8))
+                    Text("微信").font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                }
             }
-        }
-    }
-
-    private struct Tile: View {
-        let color: Color
-        let glyph: String
-
-        var body: some View {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(LinearGradient(colors: [color, color.opacity(0.75)], startPoint: .top, endPoint: .bottom))
-                .frame(width: 66, height: 66)
-                .overlay(Text(glyph).font(.system(size: 26, weight: .bold)).foregroundStyle(.white))
         }
     }
 }

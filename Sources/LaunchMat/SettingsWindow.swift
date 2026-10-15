@@ -58,11 +58,11 @@ final class SettingsWindowController: NSWindowController {
     init(model: LaunchpadModel, actions: AppActions, showGuide: (() -> Void)?) {
         tabs.tabStyle = .toolbar
         let pages: [(String, String, AnyView)] = [
-            ("General", "gearshape", AnyView(GeneralSettings(state: state, actions: actions))),
-            ("Interface", "square.grid.3x3", AnyView(InterfaceSettings(model: model))),
-            ("Apps", "square.stack.3d.up", AnyView(AppsSettings(model: model))),
-            ("Advanced", "wrench.and.screwdriver", AnyView(AdvancedSettings(actions: actions))),
-            ("About", "info.circle", AnyView(AboutSettings(actions: actions, showGuide: showGuide))),
+            (L("settings.general", "General"), "gearshape", AnyView(GeneralSettings(state: state, actions: actions))),
+            (L("settings.interface", "Interface"), "square.grid.3x3", AnyView(InterfaceSettings(model: model))),
+            (L("settings.apps", "Apps"), "square.stack.3d.up", AnyView(AppsSettings(model: model))),
+            (L("settings.advanced", "Advanced"), "wrench.and.screwdriver", AnyView(AdvancedSettings(actions: actions))),
+            (L("settings.about", "About"), "info.circle", AnyView(AboutSettings(actions: actions, showGuide: showGuide))),
         ]
         for (title, symbol, view) in pages {
             let host = NSHostingController(rootView: view.frame(width: 460).fixedSize(horizontal: false, vertical: true))
@@ -101,49 +101,81 @@ final class SettingsWindowController: NSWindowController {
 
 // MARK: - Tabs
 
+/// The grey line at the top of each tab, saying what the tab is for.
+private struct TabIntro: View {
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 30)
+            .padding(.top, 18)
+    }
+}
+
+/// A control's label with a grey help line under it.
+private struct Help: View {
+    let title: String
+    let help: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            Text(help).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
 private struct GeneralSettings: View {
     @ObservedObject var state: SettingsState
     let actions: AppActions
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Launch at login", isOn: Binding(get: { state.launchAtLogin }, set: { on in
-                    actions.setLaunchAtLogin(on)
-                    state.launchAtLogin = LoginItem.isEnabled
-                }))
-            }
-            Section("Open LaunchMat with") {
-                Picker("Hotkey", selection: Binding(get: { state.hotkey }, set: { k in
-                    state.hotkey = k
-                    actions.setHotkey(k)
-                })) {
-                    ForEach(HotkeyChoice.allCases, id: \.self) { Text($0.title).tag($0) }
+        VStack(spacing: 0) {
+            TabIntro(text: L("settings.general.intro", "When and how LaunchMat opens."))
+            Form {
+                Section {
+                    Toggle(L("settings.launchAtLogin", "Launch at login"), isOn: Binding(get: { state.launchAtLogin }, set: { on in
+                        actions.setLaunchAtLogin(on)
+                        state.launchAtLogin = LoginItem.isEnabled
+                    }))
                 }
-                Picker("Hot corner", selection: Binding(get: { state.hotCorner }, set: { c in
-                    state.hotCorner = c
-                    actions.setHotCorner(c)
-                })) {
-                    ForEach(HotCorner.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                Picker("Trackpad pinch", selection: Binding(get: { state.pinch }, set: { f in
-                    state.pinch = f
-                    actions.setPinch(f)
-                })) {
-                    ForEach(PinchFingers.allCases, id: \.self) { Text($0.title).tag($0) }
-                }
-                if state.pinch != .off {
-                    LabeledContent("Accessibility") {
-                        if state.accessibilityAllowed {
-                            Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                        } else {
-                            Button("Open System Settings…") { actions.openAccessibilitySettings() }
+                Section(L("settings.openWith", "Open LaunchMat with")) {
+                    Picker(L("settings.hotkey", "Hotkey"), selection: Binding(get: { state.hotkey }, set: { k in
+                        state.hotkey = k
+                        actions.setHotkey(k)
+                    })) {
+                        ForEach(HotkeyChoice.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    Picker(L("settings.hotCorner", "Hot corner"), selection: Binding(get: { state.hotCorner }, set: { c in
+                        state.hotCorner = c
+                        actions.setHotCorner(c)
+                    })) {
+                        ForEach(HotCorner.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    Picker(L("settings.pinch", "Trackpad pinch"), selection: Binding(get: { state.pinch }, set: { f in
+                        state.pinch = f
+                        actions.setPinch(f)
+                    })) {
+                        ForEach(PinchFingers.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
+                    if state.pinch != .off {
+                        LabeledContent {
+                            if state.accessibilityAllowed {
+                                Label(L("settings.allowed", "Allowed"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                            } else {
+                                Button(L("settings.openSystemSettings", "Open System Settings…")) { actions.openAccessibilitySettings() }
+                            }
+                        } label: {
+                            Help(title: L("settings.accessibility", "Accessibility"),
+                                 help: L("settings.accessibility.help", "Needed only for the trackpad pinch."))
                         }
                     }
                 }
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -151,12 +183,19 @@ private struct InterfaceSettings: View {
     @ObservedObject var model: LaunchpadModel
 
     var body: some View {
-        Form {
-            Picker("Grid size", selection: Binding(get: { model.gridSize }, set: { model.setGrid($0) })) {
-                ForEach(GridSize.presets, id: \.self) { Text($0.label).tag($0) }
+        VStack(spacing: 0) {
+            TabIntro(text: L("settings.interface.intro", "How the grid looks."))
+            Form {
+                Picker(selection: Binding(get: { model.gridSize }, set: { model.setGrid($0) })) {
+                    ForEach(GridSize.presets, id: \.self) { Text($0.label).tag($0) }
+                } label: {
+                    Help(title: L("settings.gridSize", "Grid size"),
+                         help: L("settings.gridSize.help", "Bigger grids fit more apps on each page."))
+                }
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -165,36 +204,43 @@ private struct AppsSettings: View {
 
     var body: some View {
         let hidden = model.layout.hidden.sorted { model.displayName($0).localizedStandardCompare(model.displayName($1)) == .orderedAscending }
-        Form {
-            Section {
-                if hidden.isEmpty {
-                    Text("No hidden apps. Right-click an app in the grid to hide it.").foregroundStyle(.secondary)
-                } else {
-                    ForEach(hidden, id: \.self) { path in
-                        HStack {
-                            if let icon = model.icons[path] {
-                                Image(nsImage: icon).resizable().frame(width: 20, height: 20)
+        VStack(spacing: 0) {
+            TabIntro(text: L("settings.apps.intro", "Apps you’ve hidden, and the app list."))
+            Form {
+                Section {
+                    if hidden.isEmpty {
+                        Text(L("settings.hidden.empty", "No hidden apps. Right-click an app in the grid to hide it.")).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(hidden, id: \.self) { path in
+                            HStack {
+                                if let icon = model.icons[path] {
+                                    Image(nsImage: icon).resizable().frame(width: 20, height: 20)
+                                }
+                                Text(model.displayName(path))
+                                Spacer()
+                                Button(L("settings.unhide", "Unhide")) { model.unhide(path) }
                             }
-                            Text(model.displayName(path))
-                            Spacer()
-                            Button("Unhide") { model.unhide(path) }
                         }
                     }
+                } header: {
+                    HStack {
+                        Text(L("settings.hidden", "Hidden Apps"))
+                        Spacer()
+                        if !hidden.isEmpty { Button(L("settings.unhideAll", "Unhide All")) { model.unhideAll() }.controlSize(.small) }
+                    }
                 }
-            } header: {
-                HStack {
-                    Text("Hidden apps")
-                    Spacer()
-                    if !hidden.isEmpty { Button("Unhide All") { model.unhideAll() }.controlSize(.small) }
+                Section {
+                    LabeledContent {
+                        Button(L("settings.rescan", "Rescan")) { model.refreshApps() }
+                    } label: {
+                        Help(title: L("settings.applications", "Applications"),
+                             help: L("settings.rescan.help", "If an app you just installed is missing, rescan."))
+                    }
                 }
             }
-            Section {
-                LabeledContent("Applications") {
-                    Button("Rescan") { model.refreshApps() }
-                }
-            }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -202,20 +248,24 @@ private struct AdvancedSettings: View {
     let actions: AppActions
 
     var body: some View {
-        Form {
-            Section("Layout") {
-                LabeledContent("Launchpad layout from before macOS 26") {
-                    Button("Import…") { actions.importLegacyLayout() }
-                }
-                LabeledContent("Layout file") {
-                    Button("Show in Finder") { actions.revealLayoutFile() }
-                }
-                LabeledContent("Start over with the default arrangement") {
-                    Button("Reset…") { actions.confirmResetLayout() }
+        VStack(spacing: 0) {
+            TabIntro(text: L("settings.advanced.intro", "Your layout, as a file."))
+            Form {
+                Section(L("settings.layout", "Layout")) {
+                    LabeledContent(L("settings.import", "Launchpad layout from before macOS 26")) {
+                        Button(L("settings.import.button", "Import…")) { actions.importLegacyLayout() }
+                    }
+                    LabeledContent(L("settings.layoutFile", "Layout file")) {
+                        Button(L("settings.showInFinder", "Show in Finder")) { actions.revealLayoutFile() }
+                    }
+                    LabeledContent(L("settings.reset", "Start over with the default arrangement")) {
+                        Button(L("settings.reset.button", "Reset…")) { actions.confirmResetLayout() }
+                    }
                 }
             }
+            .formStyle(.grouped)
+            .scrollContentBackground(.hidden)
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -224,24 +274,31 @@ private struct AboutSettings: View {
     let showGuide: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 72, height: 72)
-            Text("LaunchMat").font(.title2.weight(.semibold))
-            Text("Version \(AppDelegate.versionLine)").foregroundStyle(.secondary).textSelection(.enabled)
-            HStack {
-                Button("What’s New") { actions.openURL(Links.releaseNotes) }
-                Button("Send Feedback") { actions.openURL(Links.feedback) }
-                Button("Source Code") { actions.openURL(Links.repository) }
+        let version = AppDelegate.versionLine
+        VStack(spacing: 0) {
+            TabIntro(text: L("settings.about.intro", "LaunchMat \(version)"))
+                .textSelection(.enabled)
+            VStack(spacing: 10) {
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 72, height: 72)
+                Text("LaunchMat").font(.title2.weight(.semibold))
+                Text(L("settings.about.line", "The full-screen app grid for macOS 26 and later. Made by Jimmy."))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                HStack {
+                    Button(L("settings.whatsNew", "What’s New")) { actions.openURL(Links.releaseNotes) }
+                    Button(L("settings.feedback", "Send Feedback")) { actions.openURL(Links.feedback) }
+                    Button(L("settings.source", "Source Code")) { actions.openURL(Links.repository) }
+                }
+                .padding(.top, 6)
+                if let showGuide {
+                    Button(L("settings.showGuide", "Show the Welcome Guide Again")) { showGuide() }
+                        .buttonStyle(.link)
+                        .padding(.top, 4)
+                }
             }
-            .padding(.top, 6)
-            if let showGuide {
-                Button("Show the Welcome Guide Again") { showGuide() }
-                    .buttonStyle(.link)
-                    .padding(.top, 4)
-            }
+            .padding(24)
+            .frame(maxWidth: .infinity)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity)
     }
 }
 
@@ -276,7 +333,9 @@ enum SettingsSnapshot {
             ("about", AnyView(AboutSettings(actions: actions, showGuide: {}))),
         ]
         for (name, view) in tabs {
-            let host = NSHostingView(rootView: view.frame(width: 460).fixedSize(horizontal: false, vertical: true))
+            // The window's own background, which an off-screen view doesn't get.
+            let host = NSHostingView(rootView: view.frame(width: 460).fixedSize(horizontal: false, vertical: true)
+                .background(Color(nsColor: .windowBackgroundColor)))
             host.appearance = NSAppearance(named: .aqua)
             let size = host.fittingSize
             host.frame = NSRect(origin: .zero, size: size)
