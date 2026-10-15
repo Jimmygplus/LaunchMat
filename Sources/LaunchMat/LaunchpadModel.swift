@@ -626,9 +626,9 @@ final class LaunchpadModel: ObservableObject {
         scheduleSave()
     }
 
-    func willShow(on screen: NSScreen) {
+    func willShow(on screen: NSScreen?) {
         // Only the prepared image; if it isn't ready (a new desktop picture), it fades in when it is.
-        if let image = Wallpaper.cached(for: screen), image !== wallpaper { wallpaper = image }
+        if let screen, let image = Wallpaper.cached(for: screen), image !== wallpaper { wallpaper = image }
         prepareWallpapers()
         focus.token += 1
     }

@@ -21,6 +21,17 @@ extension HotCorner {
     }
 }
 
+extension ShowOn {
+    var title: String {
+        switch self {
+        case .main: return L("showOn.main", "Main")
+        case .active: return L("showOn.active", "Active")
+        case .cursor: return L("showOn.cursor", "Cursor")
+        case .dock: return L("showOn.dock", "Dock Screen")
+        }
+    }
+}
+
 extension PinchFingers {
     var title: String {
         switch self {

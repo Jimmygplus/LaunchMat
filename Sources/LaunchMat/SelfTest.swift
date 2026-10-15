@@ -149,8 +149,67 @@ enum SelfTest {
         let visible = Set(model.apps.keys).subtracting(model.layout.hidden)
         check("no duplicates / nothing lost", Set(placed).count == placed.count && Set(placed) == visible)
 
+        // 13. Screens change while the grid is open (spec 12).
+        screenChanges(model: model)
+
         print(failures == 0 ? "ALL PASS" : "\(failures) FAILED")
         exit(failures == 0 ? 0 : 1)
+    }
+
+    /// Made-up screens far from any real one: the window is never seen and the app is never activated. The screens
+    /// change by swapping the list the window controller reads, then posting the system's notification.
+    private static func screenChanges(model: LaunchpadModel) {
+        func wait(_ s: Double) { RunLoop.main.run(until: Date().addingTimeInterval(s)) }
+        let far: CGFloat = 40_000
+        func screen(_ id: CGDirectDisplayID, x: CGFloat, _ w: CGFloat, _ h: CGFloat) -> LaunchWindowController.Display {
+            let frame = CGRect(x: far + x, y: far, width: w, height: h)
+            return .init(id: id, frame: frame, visibleFrame: CGRect(x: frame.minX, y: frame.minY, width: w, height: h - 25))
+        }
+        var screens = [screen(1, x: 0, 1512, 982), screen(2, x: 1512, 1920, 1080)]
+        let controller = LaunchWindowController(model: model)
+        controller.displays = { screens }
+        controller.activeDisplay = { 2 }
+        controller.pointer = { CGPoint(x: far + 2000, y: far + 500) } // on screen 2
+        controller.showOn = { .cursor }
+        controller.activatesApp = false
+        func settle() {
+            wait(0.5)
+            controller.window.contentView?.layoutSubtreeIfNeeded()
+            wait(0.2)
+        }
+        func changed() {
+            NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
+            settle()
+        }
+        func fits(_ d: LaunchWindowController.Display) -> Bool {
+            controller.window.frame == d.frame && model.metrics.size == d.frame.size
+        }
+
+        controller.show()
+        settle()
+        check("screens: opens on the pointer's screen, grid sized to it", controller.isVisible && fits(screens[1]))
+
+        screens[1] = screen(2, x: 1512, 2560, 1440)
+        changed()
+        check("screens: new resolution, same count: stays open, window and grid fit the new frame",
+              controller.isVisible && fits(screens[1]))
+
+        screens.append(screen(3, x: 4072, 1440, 900))
+        changed()
+        wait(0.5)
+        check("screens: one screen more: the open grid closes and doesn't reopen", !controller.isVisible)
+
+        controller.show()
+        settle()
+        screens.remove(at: 1)
+        changed()
+        check("screens: the grid's own screen removed: it closes", !controller.isVisible)
+
+        controller.show() // the pointer is now on no screen, the active one is gone: the primary one
+        settle()
+        check("screens: the next open falls back to the primary screen", controller.isVisible && fits(screens[0]))
+        controller.hide()
+        wait(0.5)
     }
 
     private static func check(_ name: String, _ ok: Bool) {

@@ -34,6 +34,7 @@ final class SettingsState: ObservableObject {
     @Published var hotkey = Settings.hotkey
     @Published var hotCorner = Settings.hotCorner
     @Published var pinch = Settings.pinch
+    @Published var showOn = Settings.showOn
     @Published var launchAtLogin = LoginItem.isEnabled
     @Published var accessibilityAllowed = PinchMonitor.isTrusted
 
@@ -41,6 +42,7 @@ final class SettingsState: ObservableObject {
         hotkey = Settings.hotkey
         hotCorner = Settings.hotCorner
         pinch = Settings.pinch
+        showOn = Settings.showOn
         launchAtLogin = LoginItem.isEnabled
         accessibilityAllowed = PinchMonitor.isTrusted
     }
@@ -139,6 +141,13 @@ private struct GeneralSettings: View {
                         actions.setLaunchAtLogin(on)
                         state.launchAtLogin = LoginItem.isEnabled
                     }))
+                    // Read on every open; nothing else to do when it changes.
+                    Picker(L("settings.showOn", "Show on"), selection: Binding(get: { state.showOn }, set: { choice in
+                        state.showOn = choice
+                        Settings.showOn = choice
+                    })) {
+                        ForEach(ShowOn.allCases, id: \.self) { Text($0.title).tag($0) }
+                    }
                 }
                 Section(L("settings.openWith", "Open LaunchMat with")) {
                     Picker(L("settings.hotkey", "Hotkey"), selection: Binding(get: { state.hotkey }, set: { k in

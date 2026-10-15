@@ -19,6 +19,12 @@ enum Settings {
         get { PinchFingers(rawValue: UserDefaults.standard.string(forKey: "pinch") ?? "") ?? .off }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: "pinch") }
     }
+
+    /// The screen the grid opens on; the pointer's by default, as before the setting existed.
+    static var showOn: ShowOn {
+        get { ShowOn(rawValue: UserDefaults.standard.string(forKey: "showOn") ?? "") ?? .cursor }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "showOn") }
+    }
 }
 
 /// Polls the cursor (no permission needed) and fires when it rests in the chosen screen corner.

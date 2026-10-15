@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import LaunchMatCore
 import SwiftUI
 
 /// Borderless windows refuse key status by default; the search field needs it.
@@ -17,6 +18,38 @@ final class LaunchWindowController: NSObject {
     private var monitors: [Any] = []
     /// The app's main menu (the one under the menu bar icon), opened by a right-click on blank space.
     var mainMenu: (() -> NSMenu)?
+
+    /// A screen as the grid uses it. `screen` is nil only for the self-test's made-up screens.
+    struct Display {
+        let id: CGDirectDisplayID
+        let frame: CGRect
+        let visibleFrame: CGRect
+        let screen: NSScreen?
+
+        init(_ screen: NSScreen) {
+            self.init(id: screen.displayID, frame: screen.frame, visibleFrame: screen.visibleFrame, screen: screen)
+        }
+
+        init(id: CGDirectDisplayID, frame: CGRect, visibleFrame: CGRect, screen: NSScreen? = nil) {
+            self.id = id
+            self.frame = frame
+            self.visibleFrame = visibleFrame
+            self.screen = screen
+        }
+    }
+
+    /// The screens (the primary one first), the active window's screen and the pointer. The self-test replaces them.
+    var displays: () -> [Display] = { NSScreen.screens.map(Display.init) }
+    var activeDisplay: () -> CGDirectDisplayID? = { NSScreen.main?.displayID }
+    var pointer: () -> CGPoint = { NSEvent.mouseLocation }
+    var showOn: () -> ShowOn = { Settings.showOn }
+    /// Off in the self-test, so it never takes the focus from the app in front.
+    var activatesApp = true
+    /// How many screens there were when the grid opened, or at the last change since: a different count closes an
+    /// open grid (spec 12, M2).
+    private var screenCount = 0
+    /// The screen the grid is open on.
+    private(set) var shownOn: CGDirectDisplayID?
 
     init(model: LaunchpadModel) {
         self.model = model
@@ -48,6 +81,7 @@ final class LaunchWindowController: NSObject {
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
+                self?.screensChanged()
                 self?.model.prepareWallpapers()
                 self?.model.refreshIconSize()
             }
@@ -106,26 +140,53 @@ final class LaunchWindowController: NSObject {
 
     func toggle() { isVisible ? hide() : show() }
 
-    /// Opens on the screen with the pointer, or on `preferred` (the film's takes).
+    /// Opens on the screen Settings › Show on picks, worked out now, or on `preferred` (the film's takes).
     func show(on preferred: NSScreen? = nil) {
         // Never cover an open dialog (e.g. the uninstall confirmation).
-        guard !isVisible, NSApp.modalWindow == nil else { return }
+        guard !isVisible, NSApp.modalWindow == nil, let display = preferred.map(Display.init) ?? pickDisplay() else { return }
         isVisible = true
         FrameLog.shared.begin("open", seconds: 0.45)
         generation += 1
         let gen = generation
-        guard let screen = preferred ?? NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
-            ?? NSScreen.main ?? NSScreen.screens.first else { return }
-        window.setFrame(screen.frame, display: false)
-        model.screenShown = screen
-        model.willShow(on: screen)
+        window.setFrame(display.frame, display: false)
+        shownOn = display.id
+        screenCount = displays().count
+        model.screenShown = display.screen
+        model.willShow(on: display.screen)
         window.alphaValue = 1
         window.makeKeyAndOrderFront(nil)
-        NSApp.activate()
+        if activatesApp { NSApp.activate() }
         animate(open: true) { [weak self] in
             guard let self, self.generation == gen else { return }
             self.model.didShow()
         }
+    }
+
+    /// Settings › Show on, with its fallbacks: the active screen, then the primary one (spec 12, M4).
+    func pickDisplay() -> Display? {
+        let all = displays()
+        let active = activeDisplay().flatMap { id in all.firstIndex { $0.id == id } }
+        let edge = DockEdge(rawValue: UserDefaults(suiteName: "com.apple.dock")?.string(forKey: "orientation") ?? "") ?? .bottom
+        let i = ScreenChoice.pick(showOn(), screens: all.map { ScreenGeometry(frame: $0.frame, visibleFrame: $0.visibleFrame) },
+                                  active: active, cursor: pointer(), dock: edge)
+        return i.map { all[$0] }
+    }
+
+    /// Screens were added, removed, resized, rescaled or rearranged (spec 12). A different number of screens, or the
+    /// grid's own screen gone, closes an open grid the usual way; it isn't reopened, and the next open picks a screen
+    /// afresh. Otherwise an open grid is fitted to its screen's new frame where it is, without animation, and the grid
+    /// follows the window's size.
+    func screensChanged() {
+        let all = displays()
+        let countChanged = all.count != screenCount
+        screenCount = all.count
+        guard isVisible else { return }
+        guard !countChanged, let display = all.first(where: { $0.id == shownOn }) else {
+            hide()
+            return
+        }
+        model.screenShown = display.screen
+        if window.frame != display.frame { window.setFrame(display.frame, display: true) }
     }
 
     func hide() {
@@ -247,5 +308,11 @@ final class HotKey {
             DispatchQueue.main.async { HotKey.handlers[id]?() }
             return noErr
         }, 1, &spec, nil, nil)
+    }
+}
+
+extension NSScreen {
+    var displayID: CGDirectDisplayID {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
     }
 }

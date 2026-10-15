@@ -237,6 +237,29 @@ final class LegacyLaunchpadTests: XCTestCase {
 }
 
 final class GestureTests: XCTestCase {
+    func testScreenChoiceAndItsFallbacks() {
+        // Primary 1440 × 900 with the menu bar; a 1920 × 1080 screen to its right with the Dock at the bottom.
+        let primary = ScreenGeometry(frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+                                     visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 875))
+        let dell = ScreenGeometry(frame: CGRect(x: 1440, y: 0, width: 1920, height: 1080),
+                                  visibleFrame: CGRect(x: 1440, y: 70, width: 1920, height: 985))
+        let screens = [primary, dell]
+        let onDell = CGPoint(x: 2000, y: 500), nowhere = CGPoint(x: -500, y: -500)
+        XCTAssertEqual(ScreenChoice.pick(.main, screens: screens, active: 1, cursor: onDell, dock: .bottom), 0)
+        XCTAssertEqual(ScreenChoice.pick(.active, screens: screens, active: 1, cursor: .zero, dock: .bottom), 1)
+        XCTAssertEqual(ScreenChoice.pick(.active, screens: screens, active: nil, cursor: .zero, dock: .bottom), 0)
+        XCTAssertEqual(ScreenChoice.pick(.cursor, screens: screens, active: 0, cursor: onDell, dock: .bottom), 1)
+        XCTAssertEqual(ScreenChoice.pick(.cursor, screens: screens, active: 1, cursor: nowhere, dock: .bottom), 1, "no screen under the pointer: the active one")
+        XCTAssertEqual(ScreenChoice.pick(.cursor, screens: screens, active: 7, cursor: nowhere, dock: .bottom), 0, "then the primary one")
+        XCTAssertEqual(ScreenChoice.pick(.dock, screens: screens, active: 0, cursor: .zero, dock: .bottom), 1)
+        XCTAssertEqual(ScreenChoice.pick(.dock, screens: screens, active: 1, cursor: .zero, dock: .left), 1, "Dock not found on the left: the active one")
+        XCTAssertNil(ScreenChoice.pick(.cursor, screens: [], active: nil, cursor: .zero, dock: .bottom))
+        // A Dock on the left of the primary screen; the menu bar strip alone doesn't count.
+        let leftDock = ScreenGeometry(frame: primary.frame, visibleFrame: CGRect(x: 64, y: 0, width: 1376, height: 875))
+        XCTAssertEqual(ScreenChoice.dockScreen([leftDock, dell], edge: .left), 0)
+        XCTAssertNil(ScreenChoice.dockScreen([primary], edge: .bottom))
+    }
+
     func testGuardedFoldersAreJudgedByPathAlone() {
         let home = "/Users/someone"
         for path in ["/Users/someone/Downloads/HTU8eCGWMAADqQ6.jpeg", "/Users/someone/Desktop/a.png",
