@@ -68,6 +68,7 @@ enum FrameBench {
     static func run(model: LaunchpadModel) -> Never {
         model.persistenceEnabled = false
         model.load(sync: true)
+        model.prepareWallpapers()
         let controller = LaunchWindowController(model: model)
         FrameLog.shared.enabled = true
         FrameLog.shared.view = controller.window.contentView

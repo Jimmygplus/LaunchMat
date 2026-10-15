@@ -57,6 +57,8 @@ final class LaunchpadModel: ObservableObject {
     @Published var optionHeld = false
     @Published private(set) var gridSize = GridSize.load()
     @Published var wallpaper: NSImage?
+    /// The screen the grid was last opened on, for a wallpaper that arrives late.
+    weak var screenShown: NSScreen?
     /// Bumped to put the cursor in the search field; watched only by the field, not by the grid.
     let focus = FocusSignal()
 
@@ -457,8 +459,20 @@ final class LaunchpadModel: ObservableObject {
     }
 
     func willShow(on screen: NSScreen) {
-        wallpaper = Wallpaper.blurred(for: screen)
+        // Only the prepared image; if it isn't ready (a new desktop picture), it fades in when it is.
+        if let image = Wallpaper.cached(for: screen), image !== wallpaper { wallpaper = image }
+        prepareWallpapers()
         focus.token += 1
+    }
+
+    /// Blurs every screen's desktop picture in the background. Called at launch, when the Space or the screens
+    /// change, and on each open (a no-op when nothing changed).
+    func prepareWallpapers() {
+        Wallpaper.prepare(for: NSScreen.screens) { [weak self] in
+            guard let self, let screen = self.screenShown, let image = Wallpaper.cached(for: screen),
+                  image !== self.wallpaper else { return }
+            withAnimation(.easeOut(duration: 0.36)) { self.wallpaper = image }
+        }
     }
 
     /// After the opening animation: catch up with apps installed or removed meanwhile. Nothing in the grid changes

@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         RenameMigration.runOnce(supportDir: support, newName: "LaunchMat")
         model.load()
+        model.prepareWallpapers()
         controller = LaunchWindowController(model: model)
         setUpStatusItem()
         installEditMenu()

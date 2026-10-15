@@ -33,6 +33,15 @@ final class LaunchWindowController: NSObject {
         FrameRateBoost.view = window.contentView
         model.dismissHandler = { [weak self] in self?.hide() }
 
+        // A new Space can have another desktop picture; screens can be added or rearranged.
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,
+                                                          object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.model.prepareWallpapers() }
+        }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.model.prepareWallpapers() }
+        }
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification,
                                                object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.hide() }
@@ -77,6 +86,7 @@ final class LaunchWindowController: NSObject {
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
             ?? NSScreen.main ?? NSScreen.screens.first else { return }
         window.setFrame(screen.frame, display: false)
+        model.screenShown = screen
         model.willShow(on: screen)
         window.alphaValue = 1
         window.makeKeyAndOrderFront(nil)

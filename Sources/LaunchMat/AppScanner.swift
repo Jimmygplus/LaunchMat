@@ -71,20 +71,55 @@ enum AppScanner {
     }
 }
 
+/// The blurred desktop picture behind the grid. It is computed on a background thread at launch and whenever the
+/// picture or the Space changes, so opening the grid only reads the cache.
+@MainActor
 enum Wallpaper {
     private static var cache: [URL: NSImage] = [:]
+    private static var pending: Set<URL> = []
 
-    /// Pre-blurred, downscaled copy of the desktop picture (Launchpad blurs the wallpaper, not the windows).
+    /// The prepared image for this screen's desktop picture, or nil if it isn't ready yet.
+    static func cached(for screen: NSScreen) -> NSImage? {
+        NSWorkspace.shared.desktopImageURL(for: screen).flatMap { cache[$0] }
+    }
+
+    /// Blurs the desktop pictures of these screens in the background; `ready` runs on the main thread after each
+    /// new image is cached.
+    static func prepare(for screens: [NSScreen], ready: @escaping @MainActor () -> Void) {
+        for screen in screens {
+            guard let url = NSWorkspace.shared.desktopImageURL(for: screen),
+                  cache[url] == nil, pending.insert(url).inserted else { continue }
+            Task.detached(priority: .utility) {
+                let image = WallpaperImage(cg: render(url))
+                await MainActor.run {
+                    pending.remove(url)
+                    if let cg = image.cg { cache[url] = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)) }
+                    ready()
+                }
+            }
+        }
+    }
+
+    /// Synchronous, for --snapshot.
     static func blurred(for screen: NSScreen) -> NSImage? {
         guard let url = NSWorkspace.shared.desktopImageURL(for: screen) else { return nil }
         if let hit = cache[url] { return hit }
-        guard let source = CIImage(contentsOf: url), source.extent.width > 0 else { return nil }
-        let scale = 900 / source.extent.width
-        let small = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        let blurred = small.clampedToExtent().applyingGaussianBlur(sigma: 22).cropped(to: small.extent)
-        guard let cg = CIContext().createCGImage(blurred, from: small.extent) else { return nil }
+        guard let cg = render(url) else { return nil }
         let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
         cache[url] = image
         return image
     }
+
+    /// Pre-blurred, downscaled copy of the desktop picture (Launchpad blurs the wallpaper, not the windows).
+    nonisolated static func render(_ url: URL) -> CGImage? {
+        guard let source = CIImage(contentsOf: url), source.extent.width > 0 else { return nil }
+        let scale = 900 / source.extent.width
+        let small = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let blurred = small.clampedToExtent().applyingGaussianBlur(sigma: 22).cropped(to: small.extent)
+        return CIContext().createCGImage(blurred, from: small.extent)
+    }
+}
+
+private struct WallpaperImage: @unchecked Sendable {
+    let cg: CGImage?
 }

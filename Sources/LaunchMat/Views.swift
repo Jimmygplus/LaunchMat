@@ -87,13 +87,16 @@ struct BackgroundView: View {
     let image: NSImage?
 
     var body: some View {
+        // No live blur of the windows behind: a dark backdrop until the prepared wallpaper is there, then the
+        // wallpaper fades in over it.
         ZStack {
+            LinearGradient(colors: [Color(white: 0.16), Color(white: 0.07)], startPoint: .top, endPoint: .bottom)
             if let image {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-            } else {
-                VisualEffect(material: .fullScreenUI, blending: .behindWindow)
+                    .transition(.opacity)
+                    .id(ObjectIdentifier(image))
             }
             Color.black.opacity(0.2)
         }
@@ -139,7 +142,6 @@ struct SearchField: View {
         .font(.system(size: 14))
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .background(Capsule().fill(.white.opacity(0.16)))
         .overlay(Capsule().stroke(.white.opacity(0.28), lineWidth: 0.5))
     }
 }
