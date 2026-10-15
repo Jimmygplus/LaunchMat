@@ -135,16 +135,18 @@ final class LaunchpadModel: ObservableObject {
         if sync {
             apply(AppScanner.scan())
             let missing = Array(apps.keys)
-            icons.merge(Self.loadIcons(missing)) { $1 }
+            icons.merge(Self.loadIcons(missing, pixels: iconPixels)) { $1 }
+            renderedIconPixels = iconPixels
             return
         }
         guard !scanning else { return }
         scanning = true
         let model = self
+        let pixels = iconPixels
         Task.detached(priority: .userInitiated) {
             let records = AppScanner.scan()
             let missing = await model.applyScan(records)
-            let loaded = IconBatch(images: missing.isEmpty ? [:] : Self.loadIcons(missing))
+            let loaded = IconBatch(images: missing.isEmpty ? [:] : Self.loadIcons(missing, pixels: pixels))
             await model.finishScan(loaded)
         }
     }
@@ -173,17 +175,64 @@ final class LaunchpadModel: ObservableObject {
 
     private func finishScan(_ batch: IconBatch) {
         if !batch.images.isEmpty { icons.merge(batch.images) { $1 } }
+        if renderedIconPixels == 0 { renderedIconPixels = iconPixels }
         scanning = false
     }
 
-    nonisolated private static func loadIcons(_ paths: [String]) -> [String: NSImage] {
+    /// The icon bitmaps' side in pixels: the grid's icon size (the dragged icon is drawn 10% larger) times the main
+    /// screen's scale, at most 512.
+    private var iconPixels: Int {
+        let screen = NSScreen.main
+        let size = screen?.frame.size ?? CGSize(width: 1440, height: 900)
+        let points = GridMetrics(size: size, cols: gridSize.cols, rows: gridSize.rows).iconSize * 1.1
+        return min(512, Int((points * (screen?.backingScaleFactor ?? 2)).rounded(.up)))
+    }
+    private var renderedIconPixels = 0
+
+    /// Redraws every icon in the background when the size they appear at has changed (grid size, screens).
+    func refreshIconSize() {
+        let pixels = iconPixels
+        guard pixels != renderedIconPixels, !icons.isEmpty else { return }
+        renderedIconPixels = pixels
+        let paths = Array(icons.keys)
+        let model = self
+        Task.detached(priority: .utility) {
+            let batch = IconBatch(images: Self.loadIcons(paths, pixels: pixels))
+            await model.replaceIcons(batch)
+        }
+    }
+
+    private func replaceIcons(_ batch: IconBatch) {
+        icons.merge(batch.images) { $1 }
+    }
+
+    /// Each icon is drawn once, off the main thread, into a bitmap exactly as large as it appears, so showing a page
+    /// only copies pixels: nothing is rendered on demand when a page first scrolls into view.
+    nonisolated private static func loadIcons(_ paths: [String], pixels: Int) -> [String: NSImage] {
         var out: [String: NSImage] = [:]
         for path in paths {
-            let image = NSWorkspace.shared.icon(forFile: path)
-            image.size = NSSize(width: 256, height: 256)
-            out[path] = image
+            let source = NSWorkspace.shared.icon(forFile: path)
+            if let bitmap = render(source, pixels: pixels) {
+                out[path] = NSImage(cgImage: bitmap, size: NSSize(width: pixels, height: pixels))
+            } else {
+                source.size = NSSize(width: 256, height: 256)
+                out[path] = source
+            }
         }
         return out
+    }
+
+    nonisolated private static func render(_ image: NSImage, pixels: Int) -> CGImage? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        else { return nil }
+        context.interpolationQuality = .high
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        image.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        NSGraphicsContext.restoreGraphicsState()
+        return context.makeImage()
     }
 
     private func apply(_ records: [AppRecord]) {
@@ -258,6 +307,7 @@ final class LaunchpadModel: ObservableObject {
     func setGrid(_ size: GridSize) {
         gridSize = size
         size.save()
+        refreshIconSize()
         layout.fit(capacity: capacity)
         layout.compact()
         currentPage = min(currentPage, pageCount - 1)
@@ -805,7 +855,7 @@ final class LaunchpadModel: ObservableObject {
             pendingScan = nil
             apply(records)
             let missing = iconsToLoad()
-            if !missing.isEmpty { icons.merge(Self.loadIcons(missing)) { $1 } }
+            if !missing.isEmpty { icons.merge(Self.loadIcons(missing, pixels: iconPixels)) { $1 } }
         }
     }
 

@@ -40,7 +40,10 @@ final class LaunchWindowController: NSObject {
         }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.model.prepareWallpapers() }
+            MainActor.assumeIsolated {
+                self?.model.prepareWallpapers()
+                self?.model.refreshIconSize()
+            }
         }
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification,
                                                object: nil, queue: .main) { [weak self] _ in
