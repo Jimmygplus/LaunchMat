@@ -210,6 +210,41 @@ enum SelfTest {
         check("screens: the next open falls back to the primary screen", controller.isVisible && fits(screens[0]))
         controller.hide()
         wait(0.5)
+
+        // 14. Turning pages by dragging blank space, as the film's open take does: from the gap between two icons of
+        //     the middle row to page 2, then from the same gap back to page 1. (The take once started the way back
+        //     where the first drag ended, which on page 2 is an icon: that drags the icon, as it should.)
+        screens = [screen(1, x: 0, 1600, 900)]
+        controller.window.contentView = TestHostingView(rootView: RootView(model: model))
+        model.go(to: 0)
+        controller.show()
+        settle()
+        let m = model.metrics
+        let row = m.iconCenter(model.gridSize.cols).y
+        let gap = CGPoint(x: m.cellCenter(model.gridSize.cols / 2).x + m.cell.width / 2, y: row)
+        func drag(from a: CGPoint, by dx: CGFloat) {
+            func send(_ type: NSEvent.EventType, _ p: CGPoint) {
+                let window = controller.window
+                if let e = NSEvent.mouseEvent(with: type, location: NSPoint(x: p.x, y: window.frame.height - p.y), modifierFlags: [],
+                                              timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                              context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) {
+                    window.sendEvent(e)
+                }
+                wait(1.0 / 60)
+            }
+            send(.leftMouseDown, a)
+            for k in 1...20 { send(.leftMouseDragged, CGPoint(x: a.x + dx * CGFloat(k) / 20, y: a.y)) }
+            send(.leftMouseUp, CGPoint(x: a.x + dx, y: a.y))
+            wait(0.9)
+        }
+        check("paging: the gap between icons is blank on page 1", model.isBlank(at: gap))
+        drag(from: gap, by: -320)
+        check("paging: a drag left from the gap turns to page 2", model.currentPage == 1 && model.drag == nil)
+        check("paging: the same gap is blank on page 2", model.isBlank(at: gap))
+        drag(from: gap, by: 320)
+        check("paging: a drag right from the same gap turns back to page 1", model.currentPage == 0 && model.drag == nil)
+        controller.hide()
+        wait(0.5)
     }
 
     private static func check(_ name: String, _ ok: Bool) {
