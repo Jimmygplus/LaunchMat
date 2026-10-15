@@ -833,6 +833,7 @@ final class LaunchpadModel: ObservableObject {
     }
 
     /// Holding the dragged icon near the left/right edge flips the page (and can open a new last page).
+    /// Dragging an icon to the screen edge and holding it there for 0.6 s turns the page.
     private func handleEdge(_ loc: CGPoint) {
         let edge = max(36, metrics.sideInset * 0.6)
         let dir = loc.x < edge ? -1 : (loc.x > metrics.size.width - edge ? 1 : 0)
@@ -841,7 +842,7 @@ final class LaunchpadModel: ObservableObject {
         flipDirection = dir
         guard dir != 0 else { return }
         flipTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 550_000_000)
+            try? await Task.sleep(nanoseconds: 600_000_000)
             guard !Task.isCancelled else { return }
             self?.flip(dir)
         }
