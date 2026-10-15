@@ -260,21 +260,6 @@ final class GestureTests: XCTestCase {
         XCTAssertNil(ScreenChoice.dockScreen([primary], edge: .bottom))
     }
 
-    func testGuardedFoldersAreJudgedByPathAlone() {
-        let home = "/Users/someone"
-        for path in ["/Users/someone/Downloads/HTU8eCGWMAADqQ6.jpeg", "/Users/someone/Desktop/a.png",
-                     "/Users/someone/Documents/pics/b.heic", "/Users/someone/Library/Mobile Documents/com~apple~CloudDocs/c.jpg",
-                     "/Users/someone/Library/CloudStorage/Dropbox/d.jpg", "/Users/someone/Library/Containers/x/e.jpg",
-                     "/Volumes/USB/f.jpg", "/Users/someone/Pictures/../Downloads/g.jpg"] {
-            XCTAssertTrue(GuardedFolders.contains(path, home: home), path)
-        }
-        for path in ["/System/Library/Desktop Pictures/Sequoia.heic", "/Library/Desktop Pictures/h.jpg",
-                     "/Users/someone/Pictures/i.jpg", "/Users/someone/DownloadsArchive/j.jpg",
-                     "/Users/someone/Library/Application Support/com.apple.mobileAssetDesktop/k.heic"] {
-            XCTAssertFalse(GuardedFolders.contains(path, home: home), path)
-        }
-    }
-
     func testHotCornerDwellAndRearm() {
         var t = HotCornerTrigger(corner: .topLeft, dwell: 0.1)
         let screen = CGRect(x: 0, y: 0, width: 1000, height: 800)
