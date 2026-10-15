@@ -96,12 +96,14 @@ enum FilmTake {
         wait(1.6)
         guard model.pageCount >= 2 else { fail("the layout has one page; the open shot turns to page 2") }
         let m = model.metrics
-        // Between two icons in the middle row, so the press lands on blank space.
+        // Both presses land between two icons of the middle row, which is blank on every page (the end of the first
+        // drag is not: on page 2 an icon may sit there).
         let row = m.iconCenter(model.gridSize.cols).y
         let gap = CGPoint(x: m.cellCenter(model.gridSize.cols / 2).x + m.cell.width / 2, y: row)
         drag(from: gap, to: CGPoint(x: gap.x - 320, y: row), seconds: 0.55)
         wait(1.6)
-        drag(from: CGPoint(x: gap.x - 320, y: row), to: gap, seconds: 0.55)
+        guard model.isBlank(at: gap) else { fail("the gap between icons isn't blank on page 2") }
+        drag(from: gap, to: CGPoint(x: gap.x + 320, y: row), seconds: 0.55)
         wait(1.8)
     }
 
