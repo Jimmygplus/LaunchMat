@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-struct GridSize: Equatable {
+struct GridSize: Hashable {
     var cols: Int
     var rows: Int
 

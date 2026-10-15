@@ -345,6 +345,16 @@ final class LaunchpadModel: ObservableObject {
         refreshApps()
     }
 
+    func unhide(_ path: String) {
+        layout.hidden.remove(path)
+        refreshApps()
+    }
+
+    /// An app's name as the grid shows it, also for apps that are hidden or missing.
+    func displayName(_ path: String) -> String {
+        apps[path]?.name ?? URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+    }
+
     func unhideAll() {
         layout.hidden.removeAll()
         refreshApps()
@@ -506,6 +516,9 @@ final class LaunchpadModel: ObservableObject {
             withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { openFolder = id }
         }
     }
+
+    /// Opens the main menu at the pointer (the ⋯ button next to the search field). Set by the window controller.
+    var showMainMenu: (() -> Void)?
 
     /// Replaces opening apps, for --mouse-test.
     var launchHandler: ((String) -> Void)?

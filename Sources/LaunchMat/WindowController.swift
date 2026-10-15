@@ -34,6 +34,11 @@ final class LaunchWindowController: NSObject {
         FrameLog.shared.view = window.contentView
         FrameRateBoost.view = window.contentView
         model.dismissHandler = { [weak self] in self?.hide() }
+        model.showMainMenu = { [weak self] in
+            guard let self, let view = self.window.contentView, let menu = self.mainMenu?() else { return }
+            let p = view.convert(self.window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+            menu.popUp(positioning: nil, at: p, in: view)
+        }
 
         // A new Space can have another desktop picture; screens can be added or rearranged.
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification,

@@ -24,9 +24,24 @@ struct RootView: View {
                     )
 
                 ZStack(alignment: .topLeading) {
-                    SearchField(text: $model.query, focused: $searchFocused)
-                        .frame(width: min(280, geo.size.width * 0.3))
-                        .position(x: geo.size.width / 2, y: m.topInset * 0.5)
+                    HStack(spacing: 8) {
+                        SearchField(text: $model.query, focused: $searchFocused)
+                            .frame(width: min(280, geo.size.width * 0.3))
+                        // The main menu, the same as a right-click on blank space.
+                        Button { model.showMainMenu?() } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 13, weight: .semibold))
+                                .frame(width: 30, height: 30)
+                                .overlay(Circle().stroke(.white.opacity(0.28), lineWidth: 0.5))
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.white.opacity(0.8))
+                        .help("Menu")
+                        .accessibilityLabel("Menu")
+                    }
+                    .padding(.leading, 38) // keeps the search field itself centred
+                    .position(x: geo.size.width / 2, y: m.topInset * 0.5)
 
                     PagerSlide(pager: model.pager, width: geo.size.width) { PagerView(model: model, metrics: m) }
 

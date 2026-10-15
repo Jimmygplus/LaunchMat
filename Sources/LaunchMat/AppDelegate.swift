@@ -27,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if args.contains("--mouse-test") {
             MouseTest.run(model: model)
         }
+        if let i = args.firstIndex(of: "--snapshot-settings"), i + 1 < args.count {
+            SettingsSnapshot.run(model: model, dir: args[i + 1])
+        }
         if args.contains("--snapshot") {
             Snapshot.run(model: model, args: args)
             return
@@ -36,11 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.load()
         model.prepareWallpapers()
         controller = LaunchWindowController(model: model)
-        controller.mainMenu = { [weak self] in
-            let menu = NSMenu()
-            menu.delegate = self
-            return menu
-        }
+        controller.mainMenu = { [weak self] in self?.makeMainMenu() ?? NSMenu() }
         setUpStatusItem()
         installEditMenu()
         registerHotkey()
@@ -152,26 +151,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.orderFrontStandardAboutPanel(options: [.applicationVersion: Self.versionLine, .version: ""])
     }
 
-    // MARK: - Menu bar
+    // MARK: - Menus
 
+    /// The menu bar icon's menu: only opening the grid, settings, feedback, about and quit. Everything else lives in
+    /// the settings window or the main menu.
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "square.grid.3x3.fill", accessibilityDescription: "LaunchMat")
         let menu = NSMenu()
+        menu.identifier = NSUserInterfaceItemIdentifier("status")
         menu.delegate = self
         statusItem.menu = menu
     }
 
-    private func item(_ title: String, _ action: Selector?, tag: Int = 0, on: Bool = false, key: String = "") -> NSMenuItem {
+    /// The main menu, opened by a right-click on blank grid space or the ⋯ button next to the search field.
+    private func makeMainMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.identifier = NSUserInterfaceItemIdentifier("main")
+        menu.delegate = self
+        return menu
+    }
+
+    private func item(_ title: String, _ action: Selector?, tag: Int = 0, on: Bool = false, key: String = "",
+                      symbol: String? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
         item.target = self
         item.tag = tag
         item.state = on ? .on : .off
+        if let symbol { item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
         return item
     }
 
-    private func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
+    private func submenu(_ title: String, symbol: String? = nil, _ items: [NSMenuItem]) -> NSMenuItem {
         let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        if let symbol { parent.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) }
         let menu = NSMenu()
         items.forEach(menu.addItem)
         parent.submenu = menu
@@ -180,63 +193,80 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        menu.addItem(item("About LaunchMat", #selector(showAbout)))
-        menu.addItem(.separator())
-        menu.addItem(item("Show LaunchMat", #selector(showGrid)))
-        menu.addItem(.separator())
-
-        menu.addItem(submenu("Grid Size", GridSize.presets.enumerated().map { i, size in
-            item(size.label, #selector(pickGrid(_:)), tag: i, on: size == model.gridSize)
-        }))
-        menu.addItem(submenu("Hotkey", HotkeyChoice.allCases.enumerated().map { i, k in
-            item(k.title, #selector(pickHotkey(_:)), tag: i, on: k == Settings.hotkey)
-        }))
-        menu.addItem(submenu("Hot Corner", HotCorner.allCases.enumerated().map { i, corner in
-            item(corner.title, #selector(pickCorner(_:)), tag: i, on: corner == Settings.hotCorner)
-        }))
-        var pinchItems = PinchFingers.allCases.enumerated().map { i, f in
-            item(f.title, #selector(pickPinch(_:)), tag: i, on: f == Settings.pinch)
+        if menu.identifier?.rawValue == "main" {
+            menu.addItem(item("Settings…", #selector(showSettings), key: ",", symbol: "gearshape"))
+            menu.addItem(.separator())
+            let hidden = model.layout.hidden.count
+            menu.addItem(item(hidden > 0 ? "Hidden Apps (\(hidden))…" : "Hidden Apps…", #selector(showHiddenApps), symbol: "eye.slash"))
+            menu.addItem(submenu("Grid Size", symbol: "square.grid.2x2", GridSize.presets.enumerated().map { i, size in
+                item(size.label, #selector(pickGrid(_:)), tag: i, on: size == model.gridSize)
+            }))
+            menu.addItem(.separator())
+            menu.addItem(item("About LaunchMat", #selector(showAbout), symbol: "info.circle"))
+            menu.addItem(item("Restart LaunchMat", #selector(restart), symbol: "arrow.clockwise"))
+            menu.addItem(item("Quit LaunchMat", #selector(quit), symbol: "power"))
+        } else {
+            menu.addItem(item("Open LaunchMat", #selector(showGrid)))
+            menu.addItem(item("Settings…", #selector(showSettings), key: ","))
+            menu.addItem(item("Send Feedback…", #selector(sendFeedback)))
+            menu.addItem(item("About LaunchMat", #selector(showAbout)))
+            menu.addItem(.separator())
+            menu.addItem(item("Quit LaunchMat", #selector(confirmQuit), key: "q"))
         }
-        if Settings.pinch != .off && !PinchMonitor.isTrusted {
-            pinchItems.append(.separator())
-            pinchItems.append(item("Allow in Accessibility Settings…", #selector(openAccessibility)))
-        }
-        menu.addItem(submenu("Trackpad Pinch", pinchItems))
-        menu.addItem(item("Launch at Login", #selector(toggleLogin), on: LoginItem.isEnabled))
-        menu.addItem(.separator())
-
-        let hiddenCount = model.layout.hidden.count
-        let unhide = item("Unhide All Apps (\(hiddenCount))", #selector(unhideAll))
-        unhide.isEnabled = hiddenCount > 0
-        menu.addItem(unhide)
-        menu.addItem(item("Import System Launchpad Layout…", #selector(importLegacy)))
-        menu.addItem(item("Rescan Applications", #selector(rescan)))
-        menu.addItem(item("Reset Layout…", #selector(resetLayout)))
-        menu.addItem(item("Show Layout File", #selector(revealLayout)))
-        menu.addItem(.separator())
-        menu.addItem(item("Tips: ⌘-click to select several · hold ⌥ to uninstall", nil))
-        menu.addItem(item("Quit LaunchMat", #selector(quit), key: "q"))
     }
 
+    private lazy var settings = SettingsWindowController(model: model, actions: self, showGuide: nil)
+
     @objc private func showGrid() { controller.show() }
+    @objc private func showSettings() {
+        controller.hide()
+        settings.show()
+    }
+    @objc private func showHiddenApps() {
+        controller.hide()
+        settings.show(.apps)
+    }
+    @objc private func sendFeedback() { openURL(Links.feedback) }
     @objc private func pickGrid(_ sender: NSMenuItem) { model.setGrid(GridSize.presets[sender.tag]) }
-    @objc private func unhideAll() { model.unhideAll() }
-    @objc private func rescan() { model.refreshApps() }
     @objc private func quit() { NSApp.terminate(nil) }
 
-    @objc private func pickHotkey(_ sender: NSMenuItem) {
-        Settings.hotkey = HotkeyChoice.allCases[sender.tag]
+    /// Quitting from the menu bar asks first: without the app running, the hotkey and the menu bar icon are gone too.
+    @objc private func confirmQuit() {
+        let alert = NSAlert()
+        alert.messageText = "Quit LaunchMat?"
+        alert.informativeText = "The hotkey, hot corner and menu bar icon stop working until you open LaunchMat again."
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn { NSApp.terminate(nil) }
+    }
+
+    /// Opens a second copy of the app and quits this one.
+    @objc private func restart() {
+        model.saveNow()
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        config.arguments = ["--background"]
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: config) { _, _ in
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+    }
+}
+
+// MARK: - Settings actions
+
+extension AppDelegate: AppActions {
+    func setHotkey(_ choice: HotkeyChoice) {
+        Settings.hotkey = choice
         registerHotkey()
     }
 
-    @objc private func pickCorner(_ sender: NSMenuItem) {
-        let corner = HotCorner.allCases[sender.tag]
+    func setHotCorner(_ corner: HotCorner) {
         Settings.hotCorner = corner
         hotCorner.corner = corner
     }
 
-    @objc private func pickPinch(_ sender: NSMenuItem) {
-        let fingers = PinchFingers.allCases[sender.tag]
+    func setPinch(_ fingers: PinchFingers) {
         Settings.pinch = fingers
         if fingers == .fourOrFive && PinchMonitor.systemFourFingerPinchEnabled {
             Uninstaller.alert("The system four-finger pinch is on",
@@ -252,22 +282,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         startPinch(prompt: true)
     }
 
-    @objc private func openAccessibility() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-    }
-
-    @objc private func toggleLogin() {
-        if let error = LoginItem.set(!LoginItem.isEnabled) {
+    func setLaunchAtLogin(_ on: Bool) {
+        if let error = LoginItem.set(on) {
             Uninstaller.alert("Could not change Launch at Login", error)
         }
     }
 
-    @objc private func revealLayout() {
+    func openAccessibilitySettings() {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+    }
+
+    func openURL(_ url: URL) {
+        controller.hide()
+        NSWorkspace.shared.open(url)
+    }
+
+    func revealLayoutFile() {
         model.saveNow()
         NSWorkspace.shared.activateFileViewerSelecting([LaunchpadModel.layoutURL])
     }
 
-    @objc private func resetLayout() {
+    func confirmResetLayout() {
         let alert = NSAlert()
         alert.messageText = "Reset the layout?"
         alert.informativeText = "Folders, your custom order and hidden apps will be replaced by the default arrangement."
@@ -277,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if alert.runModal() == .alertFirstButtonReturn { model.resetLayout() }
     }
 
-    @objc private func importLegacy() {
+    func importLegacyLayout() {
         let pages: [[LegacyLaunchpad.Item]]
         do {
             guard let path = LegacyLaunchpad.defaultPath else { throw LegacyLaunchpad.ReadError.notFound("(unknown)") }
