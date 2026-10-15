@@ -40,5 +40,8 @@ for s in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 
-codesign --force --sign - "$APP" >/dev/null
+# Ad-hoc, with a designated requirement of the bundle ID alone. The default one is the build's code hash, so to
+# macOS privacy settings (Accessibility, Downloads…) every rebuild was a new app and asked again. Release builds are
+# re-signed with the Developer ID by scripts/release.sh.
+codesign --force --sign - --requirements "=designated => identifier \"$(plutil -extract CFBundleIdentifier raw "$APP/Contents/Info.plist")\"" "$APP" >/dev/null
 echo "Built $PWD/$APP (ad-hoc signed, this Mac only)"

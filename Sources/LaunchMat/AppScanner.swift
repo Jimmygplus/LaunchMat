@@ -78,17 +78,24 @@ enum Wallpaper {
     private static var cache: [URL: NSImage] = [:]
     private static var pending: Set<URL> = []
 
+    /// This screen's desktop picture, unless it lies in a folder macOS guards (a picture in Downloads would make
+    /// macOS ask for the Downloads folder): then the grid keeps its dark backdrop.
+    private static func url(for screen: NSScreen) -> URL? {
+        guard let url = NSWorkspace.shared.desktopImageURL(for: screen), url.isFileURL,
+              !GuardedFolders.contains(url.path) else { return nil }
+        return url
+    }
+
     /// The prepared image for this screen's desktop picture, or nil if it isn't ready yet.
     static func cached(for screen: NSScreen) -> NSImage? {
-        NSWorkspace.shared.desktopImageURL(for: screen).flatMap { cache[$0] }
+        url(for: screen).flatMap { cache[$0] }
     }
 
     /// Blurs the desktop pictures of these screens in the background; `ready` runs on the main thread after each
     /// new image is cached.
     static func prepare(for screens: [NSScreen], ready: @escaping @MainActor () -> Void) {
         for screen in screens {
-            guard let url = NSWorkspace.shared.desktopImageURL(for: screen),
-                  cache[url] == nil, pending.insert(url).inserted else { continue }
+            guard let url = url(for: screen), cache[url] == nil, pending.insert(url).inserted else { continue }
             Task.detached(priority: .utility) {
                 let image = WallpaperImage(cg: render(url))
                 await MainActor.run {
@@ -102,7 +109,7 @@ enum Wallpaper {
 
     /// Synchronous, for --snapshot.
     static func blurred(for screen: NSScreen) -> NSImage? {
-        guard let url = NSWorkspace.shared.desktopImageURL(for: screen) else { return nil }
+        guard let url = url(for: screen) else { return nil }
         if let hit = cache[url] { return hit }
         guard let cg = render(url) else { return nil }
         let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
