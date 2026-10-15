@@ -106,14 +106,15 @@ final class LaunchWindowController: NSObject {
 
     func toggle() { isVisible ? hide() : show() }
 
-    func show() {
+    /// Opens on the screen with the pointer, or on `preferred` (the film's takes).
+    func show(on preferred: NSScreen? = nil) {
         // Never cover an open dialog (e.g. the uninstall confirmation).
         guard !isVisible, NSApp.modalWindow == nil else { return }
         isVisible = true
         FrameLog.shared.begin("open", seconds: 0.45)
         generation += 1
         let gen = generation
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
+        guard let screen = preferred ?? NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
             ?? NSScreen.main ?? NSScreen.screens.first else { return }
         window.setFrame(screen.frame, display: false)
         model.screenShown = screen

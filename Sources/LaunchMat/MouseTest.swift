@@ -18,7 +18,7 @@ enum MouseTest {
         let window = controller.window
         // Started from a script, the app can't become active, and an inactive window would spend every press on
         // activating itself. For the test only, the content takes clicks without being active.
-        window.contentView = FirstClickHostingView(rootView: RootView(model: model))
+        window.contentView = TestHostingView(rootView: RootView(model: model))
         controller.show()
         wait(1.0)
         let m = model.metrics
@@ -143,14 +143,16 @@ enum MouseTest {
         exit(failures == 0 ? 0 : 1)
     }
 
-    private final class FirstClickHostingView: NSHostingView<RootView> {
-        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    }
-
     private static func wait(_ s: Double) { RunLoop.main.run(until: Date().addingTimeInterval(s)) }
 
     private static func check(_ name: String, _ ok: Bool) {
         print("\(ok ? "PASS" : "FAIL")  \(name)")
         if !ok { failures += 1 }
     }
+}
+
+/// The grid's content for `--mouse-test` and `--film-take`: takes a click even while the app isn't active (started from
+/// a script it may never become active, and the first press would be spent on activating the window).
+final class TestHostingView: NSHostingView<RootView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

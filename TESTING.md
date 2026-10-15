@@ -57,3 +57,31 @@ on the **notarized DMG** before tagging a release.
 - [ ] Import System Launchpad Layout reproduces the old pages and folders (on a Mac upgraded from macOS 15 or
       earlier).
 - [ ] Launch at Login: toggle it, log out and back in, and the menu-bar icon is there.
+
+## Film takes (`--film-take`, test builds only)
+The film's screen recordings are played by the app itself, so nobody has to drive the mouse and no permission is
+needed. Each shot hands synthetic events to the app (as `--mouse-test` does; the real pointer is not moved, the film
+draws its own) and logs what it did. It uses the saved layout but saves nothing, opens no app and trashes nothing.
+
+```bash
+LaunchMat.app/Contents/MacOS/LaunchMat --film-take open --takes ~/x-ops/film/takes
+```
+
+| Shot | What it does |
+|---|---|
+| `open` | a beat, then the grid opens (as ⇧⌘Space does), turns to page 2 and back |
+| `folder` | holds Podcasts over Music until they make a folder, then renames it "Listening" |
+| `search` | types v, s, c, deletes them, types w, x (no Return) |
+| `uninstall` | right-clicks Sketchpad, picks Move to Trash…, shows the leftovers list for about 4 s, then Cancel |
+| `close` | Esc closes the grid |
+
+- **Output:** `<takes>/<shot>.actions.jsonl`, one object per line: `{t, type, x, y, t2?, x2?, y2?, text?}`. `type` is
+  click, right, drag, key or type. `t` is in seconds since the recording started, read from `<takes>/.<shot>.start`
+  (written by `record.sh capture`); without that file, since the take started. `x` and `y` are fractions (0–1) of
+  the screen from its top left; a drag ends at (`x2`, `y2`) at `t2`; keys and typed characters are in `text`.
+- **Screen:** the built-in display, unless `--screen main`. The first line printed names it and gives its
+  `screencapture -D` number. Record that display.
+- **Staging:** `record.sh prepare` puts Podcasts, Music and the dummy Sketchpad on page 1. `--fresh` uses the
+  default arrangement instead (to try a shot without staging); the grid then turns to the right page first.
+- **Pacing:** a beat (about 0.45 s) before each action and one after it, per the film's pacing notes.
+- A release build refuses `--film-take`. Screen time is shared: ask the coordinator first (`~/jimmy-hq/SCREEN.md`).

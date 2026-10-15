@@ -27,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if args.contains("--mouse-test") {
             MouseTest.run(model: model)
         }
+        if args.contains("--film-take") {
+            FilmTake.run(model: model, args: args)
+        }
         if let i = args.firstIndex(of: "--snapshot-guide"), i + 1 < args.count {
             GuideSnapshot.run(dir: args[i + 1])
         }
