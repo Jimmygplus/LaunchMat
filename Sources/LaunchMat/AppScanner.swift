@@ -59,7 +59,8 @@ enum AppScanner {
             category: prettyCategory(info["LSApplicationCategoryType"] as? String),
             isApple: bundleID?.hasPrefix("com.apple.") == true,
             isUtility: url.deletingLastPathComponent().lastPathComponent == "Utilities",
-            keys: Search.keys(name: name, altName: bundleName)
+            keys: Search.keys(name: name, altName: bundleName,
+                              otherNames: LocalizedNames.chinese(resources: url.appendingPathComponent("Contents/Resources")))
         )
     }
 

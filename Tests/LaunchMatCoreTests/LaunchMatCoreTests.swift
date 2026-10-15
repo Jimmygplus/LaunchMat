@@ -143,6 +143,42 @@ final class SearchTests: XCTestCase {
         XCTAssertEqual(ranked(apps, "cal"), ["日历"])
         XCTAssertEqual(ranked(apps, "zzz"), [])
     }
+
+    /// On an English Mac apps are named in English; their Chinese names come from the bundle's localizations.
+    func testChineseNamesFoundOnEnglishSystem() {
+        let apps: [(name: String, other: [String])] = [("WeChat", ["微信"]), ("Notes", ["备忘录"]), ("Weather", [])]
+        let rank = { (q: String) in
+            Search.rank(apps, query: q, keys: { Search.keys(name: $0.name, altName: $0.name, otherNames: $0.other) },
+                        order: { a in apps.firstIndex { $0.name == a.name }! }).map(\.name)
+        }
+        XCTAssertEqual(rank("wx"), ["WeChat"])
+        XCTAssertEqual(rank("weixin"), ["WeChat"])
+        XCTAssertEqual(rank("微信"), ["WeChat"])
+        XCTAssertEqual(rank("bwl"), ["Notes"])
+        XCTAssertEqual(rank("we"), ["WeChat", "Weather"]) // English names still come first
+    }
+
+    func testLocalizedNamesFromStringsAndLoctable() throws {
+        let fm = FileManager.default
+        let res = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: res) }
+        try fm.createDirectory(at: res.appendingPathComponent("zh-Hans.lproj"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: res.appendingPathComponent("en.lproj"), withIntermediateDirectories: true)
+        try "\"CFBundleDisplayName\" = \"微信\";\n\"CFBundleName\" = \"微信\";\n"
+            .write(to: res.appendingPathComponent("zh-Hans.lproj/InfoPlist.strings"), atomically: true, encoding: .utf8)
+        try "\"CFBundleDisplayName\" = \"WeChat\";\n"
+            .write(to: res.appendingPathComponent("en.lproj/InfoPlist.strings"), atomically: true, encoding: .utf8)
+        XCTAssertEqual(LocalizedNames.chinese(resources: res), ["微信"])
+
+        let table: NSDictionary = ["zh_CN": ["CFBundleDisplayName": "备忘录"], "zh_TW": ["CFBundleName": "備忘錄"],
+                                   "en": ["CFBundleDisplayName": "Notes"]]
+        let other = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: other) }
+        try fm.createDirectory(at: other, withIntermediateDirectories: true)
+        XCTAssertTrue(table.write(to: other.appendingPathComponent("InfoPlist.loctable"), atomically: true))
+        XCTAssertEqual(LocalizedNames.chinese(resources: other), ["备忘录", "備忘錄"])
+        XCTAssertEqual(LocalizedNames.chinese(resources: fm.temporaryDirectory.appendingPathComponent("nope")), [])
+    }
 }
 
 final class MultiSelectTests: XCTestCase {

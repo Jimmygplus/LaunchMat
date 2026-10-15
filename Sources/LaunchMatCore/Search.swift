@@ -62,16 +62,22 @@ public enum Search {
         return ch.isLetter && scalar.value < 0x0250
     }
 
-    /// `name` is the localized display name, `altName` the bundle's own (usually English) name.
-    public static func keys(name: String, altName: String) -> SearchKeys {
+    /// `name` is the localized display name, `altName` the bundle's own (usually English) name, `otherNames` the
+    /// app's names in other languages (its Chinese name on an English Mac), searched after the first two.
+    public static func keys(name: String, altName: String, otherNames: [String] = []) -> SearchKeys {
         let n = fullAndAbbr(name)
         let a = altName == name ? (full: "", abbr: "") : fullAndAbbr(altName)
-        return SearchKeys(fields: [
+        var fields = [
             fold(name),
             altName == name ? "" : fold(altName),
             n.full, n.abbr,
             a.full, a.abbr,
-        ])
+        ]
+        for other in otherNames where other != name && other != altName {
+            let o = fullAndAbbr(other)
+            fields += [fold(other), o.full, o.abbr]
+        }
+        return SearchKeys(fields: fields)
     }
 
     /// `query` must already be normalized. Lower is better; nil = no match.
