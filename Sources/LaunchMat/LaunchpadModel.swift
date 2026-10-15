@@ -463,6 +463,7 @@ final class LaunchpadModel: ObservableObject {
 
     func go(to page: Int) {
         let target = max(0, min(pageCount - 1, page))
+        if target != currentPage { FrameLog.shared.begin("page", seconds: 0.8) }
         withAnimation(Self.pageSpring) {
             currentPage = target
             scrollOffset = 0

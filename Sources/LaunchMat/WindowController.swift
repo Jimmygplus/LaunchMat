@@ -29,6 +29,7 @@ final class LaunchWindowController: NSObject {
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) + 1)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         window.contentView = NSHostingView(rootView: RootView(model: model))
+        FrameLog.shared.view = window.contentView
         model.dismissHandler = { [weak self] in self?.hide() }
 
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification,
@@ -69,6 +70,7 @@ final class LaunchWindowController: NSObject {
         // Never cover an open dialog (e.g. the uninstall confirmation).
         guard !isVisible, NSApp.modalWindow == nil else { return }
         isVisible = true
+        FrameLog.shared.begin("open", seconds: 0.45)
         generation += 1
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) })
             ?? NSScreen.main ?? NSScreen.screens.first else { return }
@@ -86,6 +88,7 @@ final class LaunchWindowController: NSObject {
     func hide() {
         guard isVisible else { return }
         isVisible = false
+        FrameLog.shared.begin("close", seconds: 0.4)
         let gen = generation
         model.willHide()
         NSAnimationContext.runAnimationGroup({ ctx in

@@ -21,6 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if args.contains("--selftest") {
             SelfTest.run(model: model)
         }
+        if args.contains("--fps-bench") {
+            FrameBench.run(model: model)
+        }
         if args.contains("--snapshot") {
             Snapshot.run(model: model, args: args)
             return
