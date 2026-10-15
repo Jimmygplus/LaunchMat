@@ -127,6 +127,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    // MARK: - About
+
+    /// The version as the About panel shows it: "0.1.2 (3)", plus the short commit on builds that aren't a notarized
+    /// release ("0.1.2 (3) · bbdcb5a"), so a test build says which one it is.
+    static var versionLine: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        var line = "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
+        if let commit = info["LaunchMatCommit"] as? String, !commit.isEmpty { line += " · \(commit)" }
+        return line
+    }
+
+    @objc func showAbout() {
+        controller?.hide()
+        NSApp.activate()
+        NSApp.orderFrontStandardAboutPanel(options: [.applicationVersion: Self.versionLine, .version: ""])
+    }
+
     // MARK: - Menu bar
 
     private func setUpStatusItem() {
@@ -155,6 +172,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        menu.addItem(item("About LaunchMat", #selector(showAbout)))
+        menu.addItem(.separator())
         menu.addItem(item("Show LaunchMat", #selector(showGrid)))
         menu.addItem(.separator())
 

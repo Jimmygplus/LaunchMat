@@ -23,6 +23,10 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/LaunchMat"
 cp Support/Info.plist "$APP/Contents/Info.plist"
+# Test builds name their commit in About (a trailing + means uncommitted changes); release.sh removes it again.
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+[[ -n "$(git status --porcelain 2>/dev/null)" ]] && COMMIT="$COMMIT+"
+plutil -insert LaunchMatCommit -string "$COMMIT" "$APP/Contents/Info.plist"
 
 # App icon is drawn by the app itself (no binary assets in the repo).
 ICONSET=build/AppIcon.iconset

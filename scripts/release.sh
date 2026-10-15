@@ -86,6 +86,8 @@ step "Universal build"
 app="$stage/LaunchMat.app"
 ditto --norsrc --noextattr build/LaunchMat.app "$app"
 xattr -cr "$app"
+# Only test builds show their commit in About; a notarized release shows its version alone.
+[ "$mode" = release ] && plutil -remove LaunchMatCommit "$app/Contents/Info.plist" 2>/dev/null || true
 archs="$(lipo -archs "$app/Contents/MacOS/LaunchMat")"
 case "$archs" in *arm64*x86_64*|*x86_64*arm64*) ;; *) die "expected a universal binary, got: $archs" ;; esac
 
