@@ -10,6 +10,7 @@
 #   LAUNCHMAT_OUTPUT_DIR          default: build/release
 #   LAUNCHMAT_SKIP_TESTS=1        skip `swift test`
 #   LAUNCHMAT_ALLOW_DIRTY=1       allow a distribution build from a working tree with uncommitted changes
+#   LAUNCHMAT_REBUILD=1           replace a notarized build of the same version already in the output folder
 #
 # Output: <out>/LaunchMat-<v>[-suffix].dmg, <out>/SHA256SUMS, <out>/release.json (the numbers the website needs).
 set -euo pipefail
@@ -53,6 +54,14 @@ fi
 commit="$(git rev-parse HEAD)"
 if [ "$mode" = release ] && [ "${LAUNCHMAT_ALLOW_DIRTY:-0}" != "1" ] && [ -n "$(git status --porcelain)" ]; then
   die "uncommitted changes; a release must match a commit (or set LAUNCHMAT_ALLOW_DIRTY=1)."
+fi
+
+# A notarized build of this version already in the output folder is probably published: don't replace it by accident.
+if [ "$mode" = release ] && [ -f "$out/release.json" ] && [ "${LAUNCHMAT_REBUILD:-0}" != "1" ] \
+  && [ "$(plutil -extract version raw "$out/release.json" 2>/dev/null)" = "$version" ] \
+  && [ "$(plutil -extract notarized raw "$out/release.json" 2>/dev/null)" = "true" ]; then
+  die "a notarized $version build is already in $out (published?). Raise the version in Support/Info.plist,
+or set LAUNCHMAT_REBUILD=1 to replace it."
 fi
 
 dmg_name="LaunchMat-$version$suffix.dmg"
