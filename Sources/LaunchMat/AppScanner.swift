@@ -1,5 +1,5 @@
 import AppKit
-import LaunchGridCore
+import LaunchMatCore
 
 struct AppRecord: Identifiable, Sendable {
     let id: String // bundle path

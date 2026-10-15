@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Usage:
-#   ./build.sh              dev build for this Mac -> build/LaunchGrid.app (ad-hoc signed)
+#   ./build.sh              dev build for this Mac -> build/LaunchMat.app (ad-hoc signed)
 #   ./build.sh --universal  same, but arm64 + x86_64 (used by scripts/release.sh)
 #   ./build.sh --release    the distribution DMG; runs scripts/release.sh (see docs/distribution.md)
 set -euo pipefail
@@ -9,19 +9,19 @@ cd "$(dirname "$0")"
 [[ "${1:-}" == "--release" ]] && exec ./scripts/release.sh
 UNIVERSAL=0
 [[ "${1:-}" == "--universal" ]] && UNIVERSAL=1
-APP=build/LaunchGrid.app
+APP=build/LaunchMat.app
 
 if (( UNIVERSAL )); then
   swift build -c release --arch arm64 --arch x86_64
-  BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/LaunchGrid"
+  BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/LaunchMat"
 else
   swift build -c release
-  BIN=.build/release/LaunchGrid
+  BIN=.build/release/LaunchMat
 fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/LaunchGrid"
+cp "$BIN" "$APP/Contents/MacOS/LaunchMat"
 cp Support/Info.plist "$APP/Contents/Info.plist"
 
 # App icon is drawn by the app itself (no binary assets in the repo).

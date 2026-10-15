@@ -1,5 +1,5 @@
 import XCTest
-@testable import LaunchGridCore
+@testable import LaunchMatCore
 
 final class LayoutTests: XCTestCase {
     func testInsertIntoFullPageCascadesOverflow() {
@@ -311,5 +311,80 @@ final class RobustnessTests: XCTestCase {
         }
         let found = RelatedFiles.find(bundleID: "com.x.app", appName: "X", library: lib).map(\.lastPathComponent)
         XCTAssertEqual(Set(found), ["com.x.app", "com.x.app.helper.plist"], "symlinked cache and look-alike agent excluded")
+    }
+}
+
+final class RenameMigrationTests: XCTestCase {
+    private let fm = FileManager.default
+    private var support: URL!
+    private var suites: [String] = []
+
+    override func setUp() {
+        support = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try! fm.createDirectory(at: support.appendingPathComponent("LaunchGrid"), withIntermediateDirectories: true)
+    }
+
+    override func tearDown() {
+        try? fm.removeItem(at: support)
+        for s in suites { UserDefaults().removePersistentDomain(forName: s) }
+    }
+
+    private func defaults() -> UserDefaults {
+        let name = "test.\(UUID().uuidString)"
+        suites.append(name)
+        return UserDefaults(suiteName: name)!
+    }
+
+    private func write(_ text: String, _ path: String) {
+        try! Data(text.utf8).write(to: support.appendingPathComponent(path))
+    }
+
+    func testCopiesLayoutAndKeepsTheOldOne() {
+        write(#"{"pages":[]}"#, "LaunchGrid/layout.json")
+        write("x", "LaunchGrid/layout.corrupt-1.json")
+        XCTAssertTrue(RenameMigration.migrateFiles(from: support.appendingPathComponent("LaunchGrid"),
+                                                   to: support.appendingPathComponent("LaunchMat")))
+        XCTAssertEqual(try String(contentsOf: support.appendingPathComponent("LaunchMat/layout.json"), encoding: .utf8), #"{"pages":[]}"#)
+        XCTAssertTrue(fm.fileExists(atPath: support.appendingPathComponent("LaunchMat/layout.corrupt-1.json").path))
+        XCTAssertTrue(fm.fileExists(atPath: support.appendingPathComponent("LaunchGrid/layout.json").path))
+    }
+
+    func testNeverOverwritesAnExistingNewLayout() {
+        write("old", "LaunchGrid/layout.json")
+        try! fm.createDirectory(at: support.appendingPathComponent("LaunchMat"), withIntermediateDirectories: true)
+        write("new", "LaunchMat/layout.json")
+        XCTAssertFalse(RenameMigration.migrateFiles(from: support.appendingPathComponent("LaunchGrid"),
+                                                    to: support.appendingPathComponent("LaunchMat")))
+        XCTAssertEqual(try String(contentsOf: support.appendingPathComponent("LaunchMat/layout.json"), encoding: .utf8), "new")
+    }
+
+    func testSkipsSymlinkedLayout() {
+        write("secret", "elsewhere.json")
+        try! fm.createSymbolicLink(at: support.appendingPathComponent("LaunchGrid/layout.json"),
+                                   withDestinationURL: support.appendingPathComponent("elsewhere.json"))
+        XCTAssertFalse(RenameMigration.migrateFiles(from: support.appendingPathComponent("LaunchGrid"),
+                                                    to: support.appendingPathComponent("LaunchMat")))
+        XCTAssertFalse(fm.fileExists(atPath: support.appendingPathComponent("LaunchMat/layout.json").path))
+    }
+
+    func testSettingsCopyOnlyMissingKeys() {
+        let old = defaults(), new = defaults()
+        old.set(8, forKey: "gridCols")
+        old.set("topLeft", forKey: "hotCorner")
+        old.set("unrelated", forKey: "somethingElse")
+        new.set("off", forKey: "hotCorner")
+        XCTAssertEqual(RenameMigration.migrateSettings(from: old, to: new), ["gridCols"])
+        XCTAssertEqual(new.integer(forKey: "gridCols"), 8)
+        XCTAssertEqual(new.string(forKey: "hotCorner"), "off")
+        XCTAssertNil(new.object(forKey: "somethingElse"))
+    }
+
+    func testRunsOnlyOnce() {
+        write("old", "LaunchGrid/layout.json")
+        let new = defaults()
+        XCTAssertTrue(RenameMigration.runOnce(supportDir: support, newName: "LaunchMat", defaults: new, oldDefaults: nil))
+        try! fm.removeItem(at: support.appendingPathComponent("LaunchMat/layout.json"))
+        XCTAssertFalse(RenameMigration.runOnce(supportDir: support, newName: "LaunchMat", defaults: new, oldDefaults: nil))
+        XCTAssertFalse(fm.fileExists(atPath: support.appendingPathComponent("LaunchMat/layout.json").path))
     }
 }

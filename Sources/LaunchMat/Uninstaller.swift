@@ -1,5 +1,5 @@
 import AppKit
-import LaunchGridCore
+import LaunchMatCore
 
 /// Moves an app (and optionally its ~/Library leftovers) to the Trash. Never deletes permanently.
 @MainActor

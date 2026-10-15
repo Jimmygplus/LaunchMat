@@ -11,14 +11,14 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd -P)"
 version="${1:-$(plutil -extract CFBundleShortVersionString raw "$root/Support/Info.plist")}"
 version="${version#v}"
-repo="Jimmygplus/LaunchGrid"
+repo="Jimmygplus/LaunchMat"
 base="https://github.com/$repo/releases/download/v$version"
-dmg_name="LaunchGrid-$version.dmg"
+dmg_name="LaunchMat-$version.dmg"
 
 die() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 ok() { printf 'ok    %s\n' "$*"; }
 
-work="$(mktemp -d "${TMPDIR:-/tmp}/LaunchGrid-verify.XXXXXX")"
+work="$(mktemp -d "${TMPDIR:-/tmp}/LaunchMat-verify.XXXXXX")"
 mnt=""
 cleanup() {
   [ -n "$mnt" ] && hdiutil detach -quiet "$mnt" 2>/dev/null || true
@@ -57,7 +57,7 @@ ok "DMG: Developer ID signed, notarized, stapled, accepted by Gatekeeper"
 mnt="$work/mnt"
 mkdir -p "$mnt"
 hdiutil attach -quiet -readonly -nobrowse -noautoopen -mountpoint "$mnt" "$work/$dmg_name"
-app="$mnt/LaunchGrid.app"
+app="$mnt/LaunchMat.app"
 [ "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "$version" ] \
   || die "the app in the DMG is not version $version"
 codesign --verify --strict --deep "$app" || die "app signature is invalid"
@@ -67,7 +67,7 @@ case "$info" in *"Timestamp="*) ;; *) die "app signature has no secure timestamp
 case "$info" in *"(runtime)"*) ;; *) die "app is missing the hardened runtime" ;; esac
 xcrun stapler validate -q "$app" || die "app has no stapled notarization ticket"
 spctl --assess --type execute "$app" 2>/dev/null || die "Gatekeeper rejects the app"
-archs="$(lipo -archs "$app/Contents/MacOS/LaunchGrid")"
+archs="$(lipo -archs "$app/Contents/MacOS/LaunchMat")"
 ok "app: $archs, $(printf '%s\n' "$info" | grep -m1 '^Authority=')"
 
 printf '\nRelease v%s verified from the public URL.\n' "$version"

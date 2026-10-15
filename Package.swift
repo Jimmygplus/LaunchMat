@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "LaunchGrid",
+    name: "LaunchMat",
     platforms: [.macOS(.v14)],
     targets: [
-        .target(name: "LaunchGridCore"),
-        .executableTarget(name: "LaunchGrid", dependencies: ["LaunchGridCore"]),
-        .testTarget(name: "LaunchGridCoreTests", dependencies: ["LaunchGridCore"]),
+        .target(name: "LaunchMatCore"),
+        .executableTarget(name: "LaunchMat", dependencies: ["LaunchMatCore"]),
+        .testTarget(name: "LaunchMatCoreTests", dependencies: ["LaunchMatCore"]),
     ]
 )

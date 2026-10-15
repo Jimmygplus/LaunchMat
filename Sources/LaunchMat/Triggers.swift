@@ -1,7 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import ApplicationServices
-import LaunchGridCore
+import LaunchMatCore
 import ServiceManagement
 
 enum Settings {
@@ -130,7 +130,7 @@ enum LoginItem {
     /// Returns an error message, or nil on success.
     static func set(_ on: Bool) -> String? {
         if on, !Bundle.main.bundlePath.hasPrefix("/Applications/") {
-            return "Move LaunchGrid to the Applications folder first, then turn this on (it currently runs from "
+            return "Move LaunchMat to the Applications folder first, then turn this on (it currently runs from "
                 + "\(Bundle.main.bundlePath))."
         }
         do {

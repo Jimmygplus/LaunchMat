@@ -1,17 +1,23 @@
-# LaunchGrid
+# LaunchMat
 
-**The Launchpad you remember, for macOS 26 and later.** Apple removed Launchpad in macOS 26. LaunchGrid brings back the
+**The Launchpad you remember, for macOS 26 and later.** Apple removed Launchpad in macOS 26. LaunchMat brings back the
 full-screen grid of apps with pages, folders, drag-and-drop and instant search. It is a small native Swift app with no
 dependencies, no network access and no telemetry.
 
 [中文说明](#中文说明)
 
 ## Install
-1. Download `LaunchGrid-x.y.z.dmg` from [Releases](https://github.com/Jimmygplus/LaunchGrid/releases).
-2. Open it and drag **LaunchGrid** into **Applications**.
-3. Open LaunchGrid. Optionally, drag it into your Dock; clicking it there toggles the grid, like the old Launchpad icon.
+1. Download `LaunchMat-x.y.z.dmg` from [Releases](https://github.com/Jimmygplus/LaunchMat/releases).
+2. Open it and drag **LaunchMat** into **Applications**.
+3. Open LaunchMat. Optionally, drag it into your Dock; clicking it there toggles the grid, like the old Launchpad icon.
 
 Release builds are signed with a Developer ID and notarized by Apple. Requires macOS 14 or later; Apple silicon and Intel.
+
+**Coming from LaunchGrid?** LaunchMat is the same app under a new name (0.1.0 was called LaunchGrid). On its first
+launch it copies your pages, folders and settings from LaunchGrid and offers to move the old app to the Trash. If you
+used *Launch at Login*, turn it on again in the LaunchMat menu.
+
+Website: [launchmat.app](https://launchmat.app)
 
 ## Features
 | | |
@@ -28,7 +34,7 @@ Release builds are signed with a Developer ID and notarized by Apple. Requires m
 | **Launch at login** | Menu bar → *Launch at Login* |
 
 Settings live in the menu-bar ▦ menu. The layout is a plain JSON file at
-`~/Library/Application Support/LaunchGrid/layout.json`.
+`~/Library/Application Support/LaunchMat/layout.json`.
 
 ### Permissions
 - **Accessibility**: only if you turn on the trackpad pinch. Reading gestures system-wide needs it. Nothing else uses it.
@@ -41,9 +47,9 @@ so that macOS doesn't respond to the same gesture.
 
 ## Build from source
 ```bash
-git clone https://github.com/Jimmygplus/LaunchGrid && cd LaunchGrid
-./build.sh                 # -> build/LaunchGrid.app for this Mac
-open build/LaunchGrid.app
+git clone https://github.com/Jimmygplus/LaunchMat && cd LaunchMat
+./build.sh                 # -> build/LaunchMat.app for this Mac
+open build/LaunchMat.app
 ```
 Xcode 15.3 or later (Swift 5.10+). `./scripts/release.sh` makes the universal, signed and notarized DMG; it needs a
 Developer ID certificate and a `notarytool` keychain profile, named in environment variables. See
@@ -52,19 +58,19 @@ Developer ID certificate and a `notarytool` keychain profile, named in environme
 ## Tests
 ```bash
 swift test                                   # unit tests: layout, folders, search, gestures, import, uninstall scan
-.build/debug/LaunchGrid --selftest           # drives drag & drop, folders, multi-select, import on your real apps (saves nothing)
-.build/debug/LaunchGrid --snapshot out.png   # renders the UI off-screen (--query, --page, --open-folder, --fresh)
+.build/debug/LaunchMat --selftest           # drives drag & drop, folders, multi-select, import on your real apps (saves nothing)
+.build/debug/LaunchMat --snapshot out.png   # renders the UI off-screen (--query, --page, --open-folder, --fresh)
 ```
 The checks that need a person at the trackpad are listed in [TESTING.md](TESTING.md).
 
 ## Code map
-- `Sources/LaunchGridCore`: pure logic, unit-tested.
+- `Sources/LaunchMatCore`: pure logic, unit-tested.
   - `PadLayout`: pages, folders, overflow, merge, multi-select grouping.
   - `Search`: weighted prefix/substring scoring with romanized and initial-letter keys.
   - `Gestures`: hot-corner and pinch recognizers.
   - `LegacyLaunchpad`: reads the old Dock database.
   - `RelatedFiles`: finds leftovers in `~/Library`.
-- `Sources/LaunchGrid`: the app.
+- `Sources/LaunchMat`: the app.
   - `LaunchpadModel`: state, drag and drop, paging, keyboard.
   - `Views`: SwiftUI.
   - `WindowController`: full-screen overlay window and Carbon hotkey.
@@ -72,16 +78,19 @@ The checks that need a person at the trackpad are listed in [TESTING.md](TESTING
   - `Uninstaller`, `AppScanner`, `AppDelegate`: menu bar.
 
 ## License
-[GPL-3.0](LICENSE). LaunchGrid is free software, and so are its forks.
+[GPL-3.0](LICENSE). LaunchMat is free software, and so are its forks.
 
 ---
 
 ## 中文说明
 
-**macOS 26 去掉了启动台（Launchpad），LaunchGrid 把它找回来。** 它有全屏应用网格、分页、文件夹、拖拽排序和即时搜索，是原生
+**macOS 26 去掉了启动台（Launchpad），LaunchMat 把它找回来。** 它有全屏应用网格、分页、文件夹、拖拽排序和即时搜索，是原生
 Swift 小工具，不联网、不收集任何数据，GPL-3.0 开源免费。
 
-**安装：** 从 [Releases](https://github.com/Jimmygplus/LaunchGrid/releases) 下载 DMG，把 LaunchGrid 拖进“应用程序”，然后打开。
+**从 LaunchGrid 升级：** LaunchMat 就是改名后的 LaunchGrid（0.1.0 叫 LaunchGrid）。第一次打开时会自动带上原来的页面、文件夹和设置，
+并询问是否把旧 App 移到废纸篓。如果之前开了“登录时启动”，请在 LaunchMat 菜单里重新打开。
+
+**安装：** 从 [Releases](https://github.com/Jimmygplus/LaunchMat/releases) 下载 DMG，把 LaunchMat 拖进“应用程序”，然后打开。
 可以把它拖进 Dock，点一下就能打开或收起。发布版经过苹果签名和公证，双击就能打开。
 
 **用法：**

@@ -1,16 +1,16 @@
 # Distribution
 
-How a LaunchGrid release is built, checked and published. Nothing here is automatic past step 3: a person creates
+How a LaunchMat release is built, checked and published. Nothing here is automatic past step 3: a person creates
 the GitHub release and changes the website.
 
 ## What ships
 
-- `LaunchGrid-<version>.dmg`: a universal (arm64 + x86_64) app, Developer ID signed with the hardened runtime and a
+- `LaunchMat-<version>.dmg`: a universal (arm64 + x86_64) app, Developer ID signed with the hardened runtime and a
   secure timestamp, notarized and stapled; the DMG itself is signed, notarized and stapled too.
 - `SHA256SUMS`: the DMG's SHA-256, in `shasum -c` format.
 - GitHub's own source archives for the tag.
 
-Releases live on GitHub Releases (`Jimmygplus/LaunchGrid`). The app makes no network requests and has no updater.
+Releases live on GitHub Releases (`Jimmygplus/LaunchMat`). The app makes no network requests and has no updater.
 
 ## One-time setup
 
@@ -20,7 +20,7 @@ Releases live on GitHub Releases (`Jimmygplus/LaunchGrid`). The app makes no net
    ```
 2. A **notarytool keychain profile**, with an app-specific password from appleid.apple.com:
    ```bash
-   xcrun notarytool store-credentials LaunchGrid --apple-id <apple id> --team-id <TEAMID>
+   xcrun notarytool store-credentials LaunchMat --apple-id <apple id> --team-id <TEAMID>
    ```
    The password lives only in the keychain. Never put it, or the profile, in the repository.
 
@@ -32,8 +32,8 @@ Start from a clean working tree at the commit you will tag, with `CFBundleShortV
 raised in `Support/Info.plist`.
 
 ```bash
-LAUNCHGRID_SIGNING_IDENTITY="Developer ID Application: Name (TEAMID)" \
-LAUNCHGRID_NOTARY_PROFILE=LaunchGrid \
+LAUNCHMAT_SIGNING_IDENTITY="Developer ID Application: Name (TEAMID)" \
+LAUNCHMAT_NOTARY_PROFILE=LaunchMat \
 ./scripts/release.sh
 ```
 
@@ -51,11 +51,11 @@ LAUNCHGRID_NOTARY_PROFILE=LaunchGrid \
 5. Builds the DMG (the app plus an `Applications` link), signs it, notarizes, staples and validates it.
 6. Mounts the DMG read-only and checks what a user gets: the version, the signature again, the stapled ticket, and
    `spctl --assess` for the app (`execute`) and the DMG (`open`).
-7. Writes `build/release/LaunchGrid-<version>.dmg`, `SHA256SUMS` and `release.json` (version, commit, URL, bytes,
+7. Writes `build/release/LaunchMat-<version>.dmg`, `SHA256SUMS` and `release.json` (version, commit, URL, bytes,
    SHA-256: the numbers the website needs).
 
-Without `LAUNCHGRID_SIGNING_IDENTITY` the same script makes `LaunchGrid-<version>-adhoc.dmg`, to test the pipeline on
-any Mac. With an identity but `LAUNCHGRID_SKIP_NOTARIZATION=1` it makes `-unnotarized.dmg`. Neither may be published;
+Without `LAUNCHMAT_SIGNING_IDENTITY` the same script makes `LaunchMat-<version>-adhoc.dmg`, to test the pipeline on
+any Mac. With an identity but `LAUNCHMAT_SKIP_NOTARIZATION=1` it makes `-unnotarized.dmg`. Neither may be published;
 their `release.json` has no URL.
 
 Apple's first submission for a new team can wait in the queue for an hour; later ones usually take minutes.
@@ -68,10 +68,10 @@ Open the DMG on a Mac that did not build it (or after downloading it in a browse
 ## 3. Publish (a person does this)
 
 ```bash
-git tag -s v<version> -m "LaunchGrid <version>"     # or -a if you don't sign tags
+git tag -s v<version> -m "LaunchMat <version>"     # or -a if you don't sign tags
 git push origin v<version>
-gh release create v<version> build/release/LaunchGrid-<version>.dmg build/release/SHA256SUMS \
-  --title "LaunchGrid <version>" --notes-file docs/releases/v<version>.md
+gh release create v<version> build/release/LaunchMat-<version>.dmg build/release/SHA256SUMS \
+  --title "LaunchMat <version>" --notes-file docs/releases/v<version>.md
 ```
 
 ## 4. Re-download and re-verify from the public URL

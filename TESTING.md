@@ -1,6 +1,6 @@
 # Manual test checklist
 
-Automated coverage: `swift test` (unit) and `.build/debug/LaunchGrid --selftest` (drag/drop, folders, multi-select,
+Automated coverage: `swift test` (unit) and `.build/debug/LaunchMat --selftest` (drag/drop, folders, multi-select,
 import, uninstall eligibility on the real app list). The items below need a person, a trackpad and a mouse. Run them
 on the **notarized DMG** before tagging a release.
 

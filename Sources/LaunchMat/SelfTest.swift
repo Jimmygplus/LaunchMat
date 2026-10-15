@@ -1,7 +1,7 @@
 import AppKit
-import LaunchGridCore
+import LaunchMatCore
 
-/// `LaunchGrid --selftest`: drives the real drag/drop code paths with synthetic pointer positions
+/// `LaunchMat --selftest`: drives the real drag/drop code paths with synthetic pointer positions
 /// against the installed apps (fresh layout, nothing is saved) and prints PASS/FAIL per scenario.
 @MainActor
 enum SelfTest {

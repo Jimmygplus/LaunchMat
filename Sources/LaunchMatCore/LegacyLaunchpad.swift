@@ -40,7 +40,7 @@ public enum LegacyLaunchpad {
     public static func read(path: String) throws -> [[Item]] {
         let fm = FileManager.default
         guard fm.fileExists(atPath: path) else { throw ReadError.notFound(path) }
-        let tmp = fm.temporaryDirectory.appendingPathComponent("launchgrid-import-\(UUID().uuidString)")
+        let tmp = fm.temporaryDirectory.appendingPathComponent("launchmat-import-\(UUID().uuidString)")
         try fm.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: tmp) }
         let copy = tmp.appendingPathComponent("db")

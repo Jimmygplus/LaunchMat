@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import LaunchGridCore
+import LaunchMatCore
 
 struct RootView: View {
     @ObservedObject var model: LaunchpadModel

@@ -1,28 +1,28 @@
 #!/bin/bash
-# Builds the LaunchGrid distribution DMG. The steps and what to check by hand are in docs/distribution.md.
+# Builds the LaunchMat distribution DMG. The steps and what to check by hand are in docs/distribution.md.
 #
 # Signing is explicit. Nothing is picked from the keychain automatically and nothing secret lives in the repo:
-#   LAUNCHGRID_SIGNING_IDENTITY    "Developer ID Application: Name (TEAMID)" or its SHA-1 hash. Unset = ad-hoc build
-#                                  (LaunchGrid-<v>-adhoc.dmg, runs only on the Mac that built it; never publish it).
-#   LAUNCHGRID_NOTARY_PROFILE      keychain profile made with `xcrun notarytool store-credentials`. Required for a
-#                                  signed build, unless LAUNCHGRID_SKIP_NOTARIZATION=1 (-> LaunchGrid-<v>-unnotarized.dmg,
+#   LAUNCHMAT_SIGNING_IDENTITY    "Developer ID Application: Name (TEAMID)" or its SHA-1 hash. Unset = ad-hoc build
+#                                  (LaunchMat-<v>-adhoc.dmg, runs only on the Mac that built it; never publish it).
+#   LAUNCHMAT_NOTARY_PROFILE      keychain profile made with `xcrun notarytool store-credentials`. Required for a
+#                                  signed build, unless LAUNCHMAT_SKIP_NOTARIZATION=1 (-> LaunchMat-<v>-unnotarized.dmg,
 #                                  for local testing only).
-#   LAUNCHGRID_OUTPUT_DIR          default: build/release
-#   LAUNCHGRID_SKIP_TESTS=1        skip `swift test`
-#   LAUNCHGRID_ALLOW_DIRTY=1       allow a distribution build from a working tree with uncommitted changes
+#   LAUNCHMAT_OUTPUT_DIR          default: build/release
+#   LAUNCHMAT_SKIP_TESTS=1        skip `swift test`
+#   LAUNCHMAT_ALLOW_DIRTY=1       allow a distribution build from a working tree with uncommitted changes
 #
-# Output: <out>/LaunchGrid-<v>[-suffix].dmg, <out>/SHA256SUMS, <out>/release.json (the numbers the website needs).
+# Output: <out>/LaunchMat-<v>[-suffix].dmg, <out>/SHA256SUMS, <out>/release.json (the numbers the website needs).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd -P)"
 cd "$root"
 
-identity="${LAUNCHGRID_SIGNING_IDENTITY:-}"
-profile="${LAUNCHGRID_NOTARY_PROFILE:-}"
-skip_notary="${LAUNCHGRID_SKIP_NOTARIZATION:-0}"
-out="${LAUNCHGRID_OUTPUT_DIR:-$root/build/release}"
-repo="Jimmygplus/LaunchGrid"
-entitlements="$root/Support/LaunchGrid.entitlements"
+identity="${LAUNCHMAT_SIGNING_IDENTITY:-}"
+profile="${LAUNCHMAT_NOTARY_PROFILE:-}"
+skip_notary="${LAUNCHMAT_SKIP_NOTARIZATION:-0}"
+out="${LAUNCHMAT_OUTPUT_DIR:-$root/build/release}"
+repo="Jimmygplus/LaunchMat"
+entitlements="$root/Support/LaunchMat.entitlements"
 version="$(plutil -extract CFBundleShortVersionString raw Support/Info.plist)"
 build_number="$(plutil -extract CFBundleVersion raw Support/Info.plist)"
 min_os="$(plutil -extract LSMinimumSystemVersion raw Support/Info.plist)"
@@ -34,15 +34,15 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 if [ -z "$identity" ]; then
   mode=adhoc; suffix="-adhoc"
 elif [ "$identity" = "-" ]; then
-  die "for an ad-hoc build leave LAUNCHGRID_SIGNING_IDENTITY unset."
+  die "for an ad-hoc build leave LAUNCHMAT_SIGNING_IDENTITY unset."
 elif [ -n "$profile" ]; then
   mode=release; suffix=""
 elif [ "$skip_notary" = "1" ]; then
   mode=signed; suffix="-unnotarized"
 else
-  die "LAUNCHGRID_NOTARY_PROFILE is not set. Create one with
+  die "LAUNCHMAT_NOTARY_PROFILE is not set. Create one with
   xcrun notarytool store-credentials <profile> --apple-id <id> --team-id <TEAMID>
-or set LAUNCHGRID_SKIP_NOTARIZATION=1 for a signed, un-notarized local test build."
+or set LAUNCHMAT_SKIP_NOTARIZATION=1 for a signed, un-notarized local test build."
 fi
 
 if [ "$mode" != adhoc ]; then
@@ -51,12 +51,12 @@ if [ "$mode" != adhoc ]; then
 fi
 
 commit="$(git rev-parse HEAD)"
-if [ "$mode" = release ] && [ "${LAUNCHGRID_ALLOW_DIRTY:-0}" != "1" ] && [ -n "$(git status --porcelain)" ]; then
-  die "uncommitted changes; a release must match a commit (or set LAUNCHGRID_ALLOW_DIRTY=1)."
+if [ "$mode" = release ] && [ "${LAUNCHMAT_ALLOW_DIRTY:-0}" != "1" ] && [ -n "$(git status --porcelain)" ]; then
+  die "uncommitted changes; a release must match a commit (or set LAUNCHMAT_ALLOW_DIRTY=1)."
 fi
 
-dmg_name="LaunchGrid-$version$suffix.dmg"
-stage="$(mktemp -d "${TMPDIR:-/tmp}/LaunchGrid-release.XXXXXX")"
+dmg_name="LaunchMat-$version$suffix.dmg"
+stage="$(mktemp -d "${TMPDIR:-/tmp}/LaunchMat-release.XXXXXX")"
 mnt=""
 cleanup() {
   [ -n "$mnt" ] && hdiutil detach -quiet "$mnt" 2>/dev/null || true
@@ -64,20 +64,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
-printf 'LaunchGrid %s (%s), mode: %s, commit %s\n' "$version" "$build_number" "$mode" "${commit:0:12}"
+printf 'LaunchMat %s (%s), mode: %s, commit %s\n' "$version" "$build_number" "$mode" "${commit:0:12}"
 
 # ---------------------------------------------------------------------------------------------------- test + build
-if [ "${LAUNCHGRID_SKIP_TESTS:-0}" != "1" ]; then
+if [ "${LAUNCHMAT_SKIP_TESTS:-0}" != "1" ]; then
   step "swift test"
   swift test
 fi
 
 step "Universal build"
 ./build.sh --universal
-app="$stage/LaunchGrid.app"
-ditto --norsrc --noextattr build/LaunchGrid.app "$app"
+app="$stage/LaunchMat.app"
+ditto --norsrc --noextattr build/LaunchMat.app "$app"
 xattr -cr "$app"
-archs="$(lipo -archs "$app/Contents/MacOS/LaunchGrid")"
+archs="$(lipo -archs "$app/Contents/MacOS/LaunchMat")"
 case "$archs" in *arm64*x86_64*|*x86_64*arm64*) ;; *) die "expected a universal binary, got: $archs" ;; esac
 
 # ---------------------------------------------------------------------------------------------------- sign + verify
@@ -125,8 +125,8 @@ notarize() {
 # 1) Notarize and staple the app itself, so a copy dragged out of the DMG passes Gatekeeper offline.
 if [ "$mode" = release ]; then
   step "Notarizing the app (profile: $profile)"
-  ditto -c -k --norsrc --noextattr --keepParent "$app" "$stage/LaunchGrid-notarize.zip"
-  notarize "$stage/LaunchGrid-notarize.zip"
+  ditto -c -k --norsrc --noextattr --keepParent "$app" "$stage/LaunchMat-notarize.zip"
+  notarize "$stage/LaunchMat-notarize.zip"
   xcrun stapler staple "$app"
   xcrun stapler validate "$app"
   verify_signature "$app"
@@ -135,10 +135,10 @@ fi
 # ---------------------------------------------------------------------------------------------------- DMG
 step "Packaging $dmg_name"
 mkdir -p "$stage/dmg" "$out"
-ditto --norsrc --noextattr "$app" "$stage/dmg/LaunchGrid.app"
+ditto --norsrc --noextattr "$app" "$stage/dmg/LaunchMat.app"
 ln -s /Applications "$stage/dmg/Applications"
 dmg="$stage/$dmg_name"
-hdiutil create -quiet -volname "LaunchGrid $version" -srcfolder "$stage/dmg" -fs HFS+ -format UDZO -ov "$dmg"
+hdiutil create -quiet -volname "LaunchMat $version" -srcfolder "$stage/dmg" -fs HFS+ -format UDZO -ov "$dmg"
 
 if [ "$mode" != adhoc ]; then
   codesign --force --sign "$identity" --timestamp "$dmg"
@@ -160,7 +160,7 @@ mnt="$stage/mnt"
 mkdir -p "$mnt"
 hdiutil attach -quiet -readonly -nobrowse -noautoopen -mountpoint "$mnt" "$dmg"
 [ -L "$mnt/Applications" ] || die "DMG has no Applications link."
-shipped="$mnt/LaunchGrid.app"
+shipped="$mnt/LaunchMat.app"
 [ "$(plutil -extract CFBundleShortVersionString raw "$shipped/Contents/Info.plist")" = "$version" ] \
   || die "version inside the DMG does not match $version."
 verify_signature "$shipped"
@@ -174,7 +174,7 @@ if [ "$mode" = release ]; then
 fi
 
 # ---------------------------------------------------------------------------------------------------- outputs
-rm -f "$out/LaunchGrid-$version"*.dmg "$out/SHA256SUMS" "$out/release.json"
+rm -f "$out/LaunchMat-$version"*.dmg "$out/SHA256SUMS" "$out/release.json"
 mv "$dmg" "$out/$dmg_name"
 (cd "$out" && shasum -a 256 "$dmg_name" >SHA256SUMS)
 sha256="$(cut -d' ' -f1 "$out/SHA256SUMS")"

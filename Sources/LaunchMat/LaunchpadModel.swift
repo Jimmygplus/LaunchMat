@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import LaunchGridCore
+import LaunchMatCore
 
 struct DragState: Equatable {
     var entry: Entry
@@ -87,7 +87,7 @@ final class LaunchpadModel: ObservableObject {
 
     static var layoutURL: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("LaunchGrid", isDirectory: true)
+            .appendingPathComponent("LaunchMat", isDirectory: true)
         return dir.appendingPathComponent("layout.json")
     }
 
@@ -100,7 +100,7 @@ final class LaunchpadModel: ObservableObject {
                 let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
                 let backup = Self.layoutURL.deletingLastPathComponent().appendingPathComponent("layout.corrupt-\(stamp).json")
                 try? FileManager.default.moveItem(at: Self.layoutURL, to: backup)
-                NSLog("LaunchGrid: unreadable layout moved to \(backup.path)")
+                NSLog("LaunchMat: unreadable layout moved to \(backup.path)")
             }
         }
         refreshApps(sync: sync)
@@ -390,7 +390,7 @@ final class LaunchpadModel: ObservableObject {
         guard isInstalled(path) else { return } // kept in place while missing (updating / reinstalling)
         NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: path),
                                            configuration: NSWorkspace.OpenConfiguration()) { _, error in
-            if let error { NSLog("LaunchGrid: could not open \(path): \(error.localizedDescription)") }
+            if let error { NSLog("LaunchMat: could not open \(path): \(error.localizedDescription)") }
         }
         dismiss()
     }

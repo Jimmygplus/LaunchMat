@@ -113,7 +113,7 @@ final class HotKey {
         let hotKeyID = EventHotKeyID(signature: OSType(0x4C47_5244), id: id) // 'LGRD'
         let status = RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), hotKeyID,
                                          GetApplicationEventTarget(), 0, &ref)
-        if status != noErr { NSLog("LaunchGrid: hotkey registration failed (\(status))") }
+        if status != noErr { NSLog("LaunchMat: hotkey registration failed (\(status))") }
     }
 
     deinit { if let ref { UnregisterEventHotKey(ref) } }

@@ -1,6 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
-import LaunchGridCore
+import LaunchMatCore
 import SwiftUI
 
 @MainActor
@@ -25,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Snapshot.run(model: model, args: args)
             return
         }
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        RenameMigration.runOnce(supportDir: support, newName: "LaunchMat")
         model.load()
         controller = LaunchWindowController(model: model)
         setUpStatusItem()
@@ -36,6 +38,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pinch.onPinchOut = { [weak self] in self?.controller.hide() }
         startPinch(prompt: false)
         if !args.contains("--background") { controller.show() }
+        DispatchQueue.main.async { [weak self] in self?.offerToRemoveOldApp() }
+    }
+
+    /// 0.1.0 was called LaunchGrid. If it is still installed, offer once to move it to the Trash: running both means
+    /// two grids answering the same hotkey. Its layout and settings were already copied by RenameMigration.
+    private func offerToRemoveOldApp() {
+        let key = "oldAppNoticeShown"
+        let fm = FileManager.default
+        let folders = [URL(fileURLWithPath: "/Applications"), fm.homeDirectoryForCurrentUser.appendingPathComponent("Applications")]
+        guard !UserDefaults.standard.bool(forKey: key),
+              let old = NSWorkspace.shared.urlsForApplications(withBundleIdentifier: RenameMigration.oldBundleID)
+                .first(where: { url in folders.contains { url.deletingLastPathComponent().standardizedFileURL == $0.standardizedFileURL } })
+        else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        let alert = NSAlert()
+        alert.messageText = "LaunchGrid is now LaunchMat"
+        alert.informativeText = "Your pages, folders and settings came along. The old LaunchGrid app is still in "
+            + "\(old.deletingLastPathComponent().path), and running both means two grids on the same hotkey. "
+            + "Move LaunchGrid to the Trash? If you used Launch at Login, turn it on again in the LaunchMat menu."
+        alert.addButton(withTitle: "Move to Trash")
+        alert.addButton(withTitle: "Keep It")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: RenameMigration.oldBundleID) { app.terminate() }
+        NSWorkspace.shared.recycle([old]) { _, error in
+            if let error { NSLog("LaunchMat: could not move LaunchGrid to the Trash: \(error.localizedDescription)") }
+        }
     }
 
     /// Clicking the app in the Dock / Finder again toggles the grid, like Launchpad's Dock icon.
@@ -98,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "square.grid.3x3.fill", accessibilityDescription: "LaunchGrid")
+        statusItem.button?.image = NSImage(systemSymbolName: "square.grid.3x3.fill", accessibilityDescription: "LaunchMat")
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -122,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        menu.addItem(item("Show LaunchGrid", #selector(showGrid)))
+        menu.addItem(item("Show LaunchMat", #selector(showGrid)))
         menu.addItem(.separator())
 
         menu.addItem(submenu("Grid Size", GridSize.presets.enumerated().map { i, size in
@@ -155,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item("Show Layout File", #selector(revealLayout)))
         menu.addItem(.separator())
         menu.addItem(item("Tips: ⌘-click to select several · hold ⌥ to uninstall", nil))
-        menu.addItem(item("Quit LaunchGrid", #selector(quit), key: "q"))
+        menu.addItem(item("Quit LaunchMat", #selector(quit), key: "q"))
     }
 
     @objc private func showGrid() { controller.show() }
@@ -181,12 +210,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if fingers == .fourOrFive && PinchMonitor.systemFourFingerPinchEnabled {
             Uninstaller.alert("The system four-finger pinch is on",
                               "macOS also uses this gesture. Turn off System Settings › Trackpad › More Gestures › "
-                                  + "“Launchpad” / “Apps” so only LaunchGrid responds.")
+                                  + "“Launchpad” / “Apps” so only LaunchMat responds.")
         }
         if fingers != .off && !PinchMonitor.isTrusted {
-            Uninstaller.alert("Allow LaunchGrid in Accessibility",
+            Uninstaller.alert("Allow LaunchMat in Accessibility",
                               "Reading trackpad gestures system-wide needs Accessibility permission. "
-                                  + "Turn on LaunchGrid in System Settings › Privacy & Security › Accessibility; "
+                                  + "Turn on LaunchMat in System Settings › Privacy & Security › Accessibility; "
                                   + "the pinch starts working right away.")
         }
         startPinch(prompt: true)
@@ -229,7 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let folders = pages.flatMap { $0 }.filter { if case .folder = $0 { return true } else { return false } }.count
         let alert = NSAlert()
         alert.messageText = "Import the system Launchpad layout?"
-        alert.informativeText = "Found \(pages.count) pages and \(folders) folders. Your current LaunchGrid layout "
+        alert.informativeText = "Found \(pages.count) pages and \(folders) folders. Your current LaunchMat layout "
             + "will be replaced; apps Launchpad didn't know about are added at the end."
         alert.addButton(withTitle: "Import")
         alert.addButton(withTitle: "Cancel")
@@ -240,7 +269,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
-/// `LaunchGrid --snapshot out.png [--width W --height H] [--query q] [--page n] [--open-folder] [--fresh]`
+/// `LaunchMat --snapshot out.png [--width W --height H] [--query q] [--page n] [--open-folder] [--fresh]`
 /// renders the UI off-screen to a PNG and exits. Never writes the user's layout file.
 @MainActor
 enum Snapshot {
