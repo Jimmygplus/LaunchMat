@@ -80,6 +80,10 @@ struct RootView: View {
                         .overlay(alignment: .topTrailing) {
                             if !d.companions.isEmpty { CountBadge(count: d.companions.count + 1, size: m.iconSize) }
                         }
+                        .overlay(alignment: .topLeading) {
+                            // Pulled out of its folder (C7, placeholder until rea confirms when it shows).
+                            if d.sourceFolder != nil, d.extracted { MergeBadge(kind: .minus, iconSize: m.iconSize) }
+                        }
                         .scaleEffect(1.1)
                         .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
                         .position(x: d.location.x - d.grab.width, y: d.location.y - d.grab.height)
@@ -246,11 +250,32 @@ struct MergePlate: View {
         RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
             .fill(.white.opacity(0.3))
             .frame(width: size * 1.18, height: size * 1.18)
+            .overlay(alignment: .topLeading) {
+                MergeBadge(kind: .plus, iconSize: size).offset(x: -size * 0.06, y: -size * 0.06)
+            }
             .scaleEffect(active ? 1 : 0.72)
             .animation(active ? .interpolatingSpring(mass: 1, stiffness: 520, damping: 32)
                               : .interpolatingSpring(mass: 1, stiffness: 420, damping: 36), value: active)
             .opacity(active ? 1 : 0)
             .animation(active ? .easeOut(duration: 0.16) : .easeIn(duration: 0.12), value: active)
+    }
+}
+
+/// The ± badge of a merge (spec C7: folder.badge.plus / folder.badge.minus). When each one shows is a placeholder
+/// until rea confirms it: "+" on the plate while an app is held over a target, "−" on an app pulled out of its folder.
+struct MergeBadge: View {
+    enum Kind { case plus, minus }
+    let kind: Kind
+    let iconSize: CGFloat
+
+    var body: some View {
+        let d = iconSize * FolderMotion.badgeSize
+        Image(systemName: kind == .plus ? "plus" : "minus")
+            .font(.system(size: d * 0.5, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: d, height: d)
+            .background(Circle().fill(Color(white: 0.22).opacity(0.92)))
+            .overlay(Circle().stroke(.white.opacity(0.45), lineWidth: 0.5))
     }
 }
 

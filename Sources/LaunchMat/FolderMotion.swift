@@ -16,6 +16,8 @@ enum FolderMotion {
     /// Corner radius of the open panel, and of the icon it comes from (as a share of the icon's size).
     static let panelRadius: CGFloat = 30
     static let iconRadius: CGFloat = 0.225
+    /// The ± badge of a merge (C7), as a share of the icon's size. [placeholder, waiting for rea]
+    static let badgeSize: CGFloat = 0.3
 }
 
 /// An opened folder's state, watched only by the folder overlay and the grid's backdrop, so opening and closing
