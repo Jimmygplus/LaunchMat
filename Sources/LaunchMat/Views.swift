@@ -272,11 +272,23 @@ struct MergePlate: View {
         RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
             .fill(.white.opacity(0.3))
             .frame(width: size * 1.18, height: size * 1.18)
-            .scaleEffect(active ? 1 : 0.72)
-            .animation(active ? .interpolatingSpring(mass: 1, stiffness: 520, damping: 32)
-                              : .interpolatingSpring(mass: 1, stiffness: 420, damping: 36), value: active)
-            .opacity(active ? 1 : 0)
-            .animation(active ? .easeOut(duration: 0.16) : .easeIn(duration: 0.12), value: active)
+            .modifier(Pop(shown: active))
+    }
+}
+
+/// LaunchOS's one "pop" (spec 13.2), for the merge plate and the uninstall badge: in, scale 0.72 → 1 on a spring
+/// (mass 1, stiffness 520, damping 32) while fading in over 0.16 s ease-out; out, back to 0.72 (stiffness 420,
+/// damping 36) while fading out over 0.12 s ease-in.
+struct Pop: ViewModifier {
+    let shown: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(shown ? 1 : 0.72)
+            .animation(shown ? .interpolatingSpring(mass: 1, stiffness: 520, damping: 32)
+                             : .interpolatingSpring(mass: 1, stiffness: 420, damping: 36), value: shown)
+            .opacity(shown ? 1 : 0)
+            .animation(shown ? .easeOut(duration: 0.16) : .easeIn(duration: 0.12), value: shown)
     }
 }
 
@@ -387,8 +399,11 @@ struct EntryCell: View {
                     if picked { SelectionCheck(size: metrics.iconSize) }
                 }
                 .overlay(alignment: .topLeading) {
-                    if model.optionHeld, let path = entry.appPath, model.canUninstall(path) {
+                    // Pops in and out with ⌥ (spec 13.2) rather than appearing at once.
+                    if let path = entry.appPath, model.canUninstall(path) {
                         UninstallBadge(size: metrics.iconSize) { model.uninstall(path) }
+                            .modifier(Pop(shown: model.optionHeld))
+                            .allowsHitTesting(model.optionHeld)
                     }
                 }
                 .modifier(Jiggle(active: model.optionHeld))
@@ -624,8 +639,10 @@ struct FolderAppCell: View {
         VStack(spacing: 6) {
             AppIconImage(image: model.icons[path], size: panel.iconSize)
                 .overlay(alignment: .topLeading) {
-                    if model.optionHeld, model.canUninstall(path) {
+                    if model.canUninstall(path) {
                         UninstallBadge(size: panel.iconSize) { model.uninstall(path) }
+                            .modifier(Pop(shown: model.optionHeld))
+                            .allowsHitTesting(model.optionHeld)
                     }
                 }
                 .modifier(Jiggle(active: model.optionHeld))
