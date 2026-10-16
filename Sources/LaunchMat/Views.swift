@@ -138,12 +138,15 @@ struct BackgroundView: View {
     }
 }
 
+/// A system material, always in its dark form: the grid is white text on a picture, like Launchpad, whatever the
+/// system's appearance. (In the light form the open folder turned the whole screen and its panel light grey.)
 struct VisualEffect: NSViewRepresentable {
     var material: NSVisualEffectView.Material
     var blending: NSVisualEffectView.BlendingMode
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let v = NSVisualEffectView()
+        v.appearance = NSAppearance(named: .darkAqua)
         v.state = .active
         v.material = material
         v.blendingMode = blending
