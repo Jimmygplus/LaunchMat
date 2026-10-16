@@ -147,14 +147,23 @@ final class LaunchpadModel: ObservableObject {
         guard !cellAlias.isEmpty else { return placed }
         let keys = Set(placed.map(\.id))
         return placed.map { item in
-            guard case .folder(let id) = item.entry, let alias = cellAlias[id], !keys.contains(alias) else { return item }
+            guard case .folder(let id) = item.entry, let alias = cellAlias[id]?.key, !keys.contains(alias) else { return item }
             return PlacedEntry(entry: item.entry, page: item.page, slot: item.slot, id: alias)
         }
     }
 
+    /// For a folder just made by a drop, the app whose cell it took over (its icon fades into the folder's).
+    func morphSource(_ entry: Entry) -> Entry? {
+        guard case .folder(let id) = entry else { return nil }
+        return cellAlias[id]
+    }
+
+    /// Apps just dropped into a folder: their cells stay hidden while they go. Cleared at the next drag.
+    private(set) var merged: Set<Entry> = []
+
     /// Folders made by dropping an app on another, keyed to the target app's cell identity (see PlacedEntry.id).
     /// Kept until the grid closes, where the switch back can't be seen.
-    private var cellAlias: [UUID: String] = [:]
+    private var cellAlias: [UUID: Entry] = [:]
 
     // MARK: - Loading
 
@@ -708,6 +717,7 @@ final class LaunchpadModel: ObservableObject {
             dragEnded()
         }
         cellAlias.removeAll()
+        merged.removeAll()
         query = ""
         openFolder = nil
         selection = nil
@@ -933,6 +943,7 @@ final class LaunchpadModel: ObservableObject {
                      iconCenter: CGPoint? = nil, iconSize: CGFloat = 0) {
         guard !isSearching else { return }
         if drag == nil {
+            merged.removeAll()
             var state = DragState(entry: entry, location: loc)
             if let start, let iconCenter { state.grab = DragState.grab(at: start, iconCenter: iconCenter, iconSize: iconSize) }
             if selected.contains(entry), selected.count > 1 {
@@ -1081,8 +1092,9 @@ final class LaunchpadModel: ObservableObject {
             closeOpenFolder = true
         } else if d.sourceFolder == nil, let t = target, let path = d.entry.appPath {
             let id = l.merge(app: path, onto: t, newFolderName: suggestedFolderName(target: t, adding: path))
+            merged = Set([d.entry] + d.companions)
             if case .app = t, d.companions.isEmpty { newFolder = id }
-            if case .app = t, let id { cellAlias[id] = t.key }
+            if case .app = t, let id { cellAlias[id] = t }
             if let id {
                 // Multi-drag onto a folder target: apps join it, folders land right after it.
                 for c in d.companions {

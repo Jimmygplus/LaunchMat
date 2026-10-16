@@ -340,14 +340,17 @@ struct EntryCell: View {
 
     var body: some View {
         let d = model.drag
-        let isDragged = d?.entry == entry && (d?.sourceFolder == nil || d?.extracted == true)
+        // Also hidden: an app just dropped into a folder, while its cell goes (it would show for a moment).
+        let isDragged = d?.entry == entry && (d?.sourceFolder == nil || d?.extracted == true) || model.merged.contains(entry)
         let merging = model.mergeTarget == entry
         let picked = model.selected.contains(entry)
         let _ = FrameLog.shared.countCell()
         let frame = IconPress.frame(center: center, iconSize: metrics.iconSize, cellWidth: metrics.cell.width * 0.94,
                                     height: metrics.contentHeight + 12)
         VStack(spacing: metrics.labelSpacing) {
-            EntryIcon(model: model, entry: entry, size: metrics.iconSize)
+            // The merge target, and the folder it becomes, carry both icons so the change is a fade in place
+            // that moves with the cell (C8); every other cell draws just its own.
+            EntryIcon(model: model, entry: entry, size: metrics.iconSize, morphFrom: merging ? entry : model.morphSource(entry))
                 .background(
                     RoundedRectangle(cornerRadius: metrics.iconSize * 0.28, style: .continuous)
                         .fill(.white.opacity(picked ? 0.22 : 0))
@@ -366,6 +369,9 @@ struct EntryCell: View {
             Text(model.title(for: entry))
                 .font(.system(size: metrics.labelFont, weight: .medium))
                 .foregroundStyle(.white)
+                // A name that changes (the target app becoming its folder) changes at once: a fading old name
+                // would stay behind where the cell was.
+                .contentTransition(.identity)
                 .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -398,13 +404,26 @@ struct EntryIcon: View {
     @ObservedObject var model: LaunchpadModel
     let entry: Entry
     let size: CGFloat
+    /// The app a merge turns (or has just turned) into this folder: both icons stay in the view, the app's fading
+    /// out and the folder's in, so nothing is inserted or removed and both move with the cell (C8).
+    var morphFrom: Entry? = nil
 
     var body: some View {
-        switch entry {
-        case .app(let path):
-            AppIconImage(image: model.icons[path], size: size)
-        case .folder(let id):
-            FolderPreview(icons: model.previewIcons(id), size: size)
+        if let app = morphFrom?.appPath {
+            let folder: UUID? = { if case .folder(let id) = entry { return id } else { return nil } }()
+            ZStack {
+                AppIconImage(image: model.icons[app], size: size)
+                    .opacity(folder == nil ? 1 : 0)
+                FolderPreview(icons: folder.map(model.previewIcons) ?? [], size: size)
+                    .opacity(folder == nil ? 0 : 1)
+            }
+        } else {
+            switch entry {
+            case .app(let path):
+                AppIconImage(image: model.icons[path], size: size)
+            case .folder(let id):
+                FolderPreview(icons: model.previewIcons(id), size: size)
+            }
         }
     }
 }
@@ -434,6 +453,7 @@ struct AppIconImage: View {
 struct FolderPreview: View {
     let icons: [NSImage?]
     let size: CGFloat
+    private static let blank = NSImage(size: NSSize(width: 1, height: 1))
     @Environment(\.displayScale) private var scale
 
     var body: some View {
@@ -447,12 +467,11 @@ struct FolderPreview: View {
             shape
                 .fill(.white.opacity(0.24))
                 .overlay(shape.stroke(.white.opacity(0.3), lineWidth: 0.6))
-            ForEach(0..<min(9, icons.count), id: \.self) { i in
-                if let img = icons[i] {
-                    Image(nsImage: img).resizable().interpolation(.high)
-                        .frame(width: cell, height: cell)
-                        .offset(x: px(margin + CGFloat(i % 3) * step), y: px(margin + CGFloat(i / 3) * step))
-                }
+            // Always nine cells, empty ones blank, so a preview that fills up keeps its views (C8 morph).
+            ForEach(0..<9, id: \.self) { i in
+                Image(nsImage: (i < icons.count ? icons[i] : nil) ?? Self.blank).resizable().interpolation(.high)
+                    .frame(width: cell, height: cell)
+                    .offset(x: px(margin + CGFloat(i % 3) * step), y: px(margin + CGFloat(i / 3) * step))
             }
         }
         .frame(width: side, height: side)
@@ -489,9 +508,12 @@ struct FolderOverlay: View {
                 .contentShape(Rectangle())
                 .onTapGesture { model.closeFolder() }
 
+            // The panel fades as it shrinks and appears as it grows (C9: "一边缩一边淡出"): at the icon it is
+            // invisible, so nothing dark shows where the folder lands.
             shape
                 .fill(Color(white: 0.06).opacity(0.55))
                 .overlay(shape.stroke(.white.opacity(0.18), lineWidth: 0.6))
+                .opacity(open ? 1 : 0)
                 .frame(width: rect.width, height: rect.height)
                 .contentShape(shape)
                 .onTapGesture {}
