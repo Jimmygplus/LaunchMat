@@ -70,10 +70,12 @@ LaunchMat.app/Contents/MacOS/LaunchMat --film-take open --takes ~/x-ops/film/tak
 | Shot | What it does |
 |---|---|
 | `open` | a beat, then the grid opens (as ⇧⌘Space does), turns to page 2 and back with short drags on blank space; the drawn pointer is hidden meanwhile (page turns are shown as a trackpad swipe) |
-| `folder` | holds Music over Podcasts until they make a folder, names it "Listen" (⌘A, Return), closes the folder; writes the layout to `<takes>/folder.layout.json` for the search take's `--demo-layout` |
+| `folder` | holds Music over Podcasts until they make a folder, names it "Listen" (⌘A, Return), closes the folder; writes the layout to `<takes>/folder.layout.json` for the search take's `--demo-layout`. `--from`, `--onto`, `--name` pick other apps (by name) and another name, e.g. `--from Notes --onto Reminders --name Plans` |
 | `search` | types w, x, deletes them, types v, s, c (no Return) |
 | `uninstall` | right-clicks Sketchpad, picks Move to Trash…, shows the leftovers list for about 4 s, then Cancel |
 | `close` | Esc closes the grid |
+| `wiggle` | holds ⌥ for 2 s (every icon wiggles, removable ones show ✕), then lets go |
+| `import` | Settings › Advanced › Import…, the app's own question ("Found 4 pages and 9 folders…"), Import, then the grid in the old arrangement. The old layout is demo data built in; the Mac's real Launchpad database and the saved layout are never touched |
 
 - **Output:** `<takes>/<shot>.actions.jsonl`, one object per line: `{t, type, x, y, t2?, x2?, y2?, text?}`. `type` is
   click, right, drag, key or type. `t` is in seconds since the recording started, read from `<takes>/.<shot>.start`
@@ -83,7 +85,8 @@ LaunchMat.app/Contents/MacOS/LaunchMat --film-take open --takes ~/x-ops/film/tak
   `screencapture -D` number. Record that display.
 - **Demo layout:** `--demo-layout FILE` shows the film's own grid instead of the saved one (which is neither read nor
   written): system apps and Apple's apps in Launchpad's default arrangement (from the Dock's `LaunchPadLayout.plist`),
-  the other system apps by name, then Visual Studio Code, WeChat and the dummy Sketchpad. It is read from FILE when
+  the other system apps by name, then Chrome, Visual Studio Code, Slack, Spotify, Figma and Zoom where installed (no
+  WeChat, no Chinese names, nothing else installed here). It is read from FILE when
   that exists, otherwise built and written there. `--film-take layout --demo-layout FILE` only prepares it and
   prints the pages, showing nothing.
 - **Staging without a demo layout:** `record.sh prepare` puts Podcasts, Music and the dummy Sketchpad on page 1.

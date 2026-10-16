@@ -23,7 +23,7 @@ import SwiftUI
 /// Pauses follow the film's pacing: a beat before each action, and a beat after it.
 @MainActor
 enum FilmTake {
-    static let shots = ["open", "folder", "search", "uninstall", "close"]
+    static let shots = ["open", "folder", "search", "uninstall", "close", "wiggle", "import"]
     /// Not a shot: builds (or reads) the demo layout, prints its pages and exits, showing nothing.
     static let layoutOnly = "layout"
 
@@ -34,11 +34,13 @@ enum FilmTake {
     private static var t0 = 0.0
     private static var output: URL!
     private static var count = 0
+    private static var arguments: [String] = []
+    private static func value(_ flag: String) -> String? {
+        arguments.firstIndex(of: flag).flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
+    }
 
     static func run(model: LaunchpadModel, args: [String]) -> Never {
-        func value(_ flag: String) -> String? {
-            args.firstIndex(of: flag).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
-        }
+        arguments = args
         #if DEBUG
         let testBuild = true
         #else
@@ -99,6 +101,8 @@ enum FilmTake {
         case "folder": folderShot()
         case "search": searchShot()
         case "uninstall": uninstallShot()
+        case "wiggle": wiggleShot()
+        case "import": importShot()
         default: closeShot()
         }
         print("film-take \(shot): \(count) actions logged")
@@ -135,11 +139,14 @@ enum FilmTake {
 
     /// Hold Music over Podcasts until they make a folder, name it "Listen", close the folder, and write the layout to
     /// <takes>/folder.layout.json: the search take can use it as its --demo-layout, so the two grids follow on.
+    /// `--from`, `--onto` and `--name` choose other apps (by name) and another name (film v4: Notes, Reminders, Plans).
     private static func folderShot() {
         openGrid()
-        guard let music = slot(bundleID: "com.apple.Music", name: "Music"),
-              let podcasts = slot(bundleID: "com.apple.podcasts", name: "Podcasts"), podcasts.page == music.page else {
-            fail("Music and Podcasts must be on the same page (the demo layout or record.sh prepare puts them on page 1)")
+        let fromName = value("--from"), ontoName = value("--onto")
+        guard let music = fromName.map({ slot(name: $0) }) ?? slot(bundleID: "com.apple.Music", name: "Music"),
+              let podcasts = ontoName.map({ slot(name: $0) }) ?? slot(bundleID: "com.apple.podcasts", name: "Podcasts"),
+              podcasts.page == music.page else {
+            fail("\(fromName ?? "Music") and \(ontoName ?? "Podcasts") must be on the same page")
         }
         goTo(music.page)
         let m = model.metrics
@@ -162,7 +169,7 @@ enum FilmTake {
         // Select All, whether or not the key reached a menu.
         if editing { (window.firstResponder as? NSTextView)?.selectAll(nil) } else { name.wrappedValue = "" }
         wait(0.3)
-        type("Listen", interval: 0.09, value: { name.wrappedValue }) { name.wrappedValue += $0 }
+        type(value("--name") ?? "Listen", interval: 0.09, value: { name.wrappedValue }) { name.wrappedValue += $0 }
         wait(0.5)
         key("return", code: 36, characters: "\r")
         wait(1.0)
@@ -252,6 +259,117 @@ enum FilmTake {
         menu.performActionForItem(at: i)
         wait(6.0)
         wait(1.0)
+    }
+
+    /// Hold ⌥ (as the window's modifier monitor sees it): every icon wiggles and the removable ones show ✕;
+    /// 2 seconds; let go.
+    private static func wiggleShot() {
+        openGrid()
+        wait(0.5)
+        record("key", text: "option down")
+        model.optionHeld = true
+        wait(2.0)
+        record("key", text: "option up")
+        model.optionHeld = false
+        wait(1.5)
+    }
+
+    /// Settings › Advanced › Import…, the app's own question ("Found 4 pages and 9 folders…"), Import, and the grid in
+    /// the old arrangement. The old layout is demo data made here (demoOldLayout); the Mac's real Launchpad database
+    /// and the saved layout are never read or written.
+    private static func importShot() {
+        let pages = demoOldLayout()
+        let actions = FilmSettingsActions(pages: pages)
+        let settings = SettingsWindowController(model: model, actions: actions, showGuide: nil)
+        settings.show(.advanced)
+        guard let window = settings.window else { fail("no settings window") }
+        window.setFrameOrigin(NSPoint(x: screen.frame.midX - window.frame.width / 2,
+                                      y: screen.frame.midY - window.frame.height / 2 + 60))
+        wait(1.5)
+        // The tab's buttons are, from the top: Import…, Show in Finder, Reset….
+        guard let importButton = buttons(in: window.contentView)
+            .max(by: { $0.convert($0.bounds, to: nil).maxY < $1.convert($1.bounds, to: nil).maxY }) else {
+            fail("no Import… button in Settings › Advanced")
+        }
+        let frame = window.convertToScreen(importButton.convert(importButton.bounds, to: nil))
+        let p = rootPoint(fromScreen: CGPoint(x: frame.midX, y: frame.midY))
+        Pointer.glide(to: p)
+        wait(0.45)
+        record("click", at: p)
+        // The question runs its own loop; FilmSettingsActions answers it from inside.
+        importButton.performClick(nil)
+        wait(0.6)
+        window.close()
+        wait(0.4)
+        openGrid()
+        wait(2.5)
+    }
+
+    /// Answers Settings' import from the demo data: the app's question, the pointer to Import, the layout applied.
+    private final class FilmSettingsActions: AppActions {
+        let pages: [[LegacyLaunchpad.Item]]
+        init(pages: [[LegacyLaunchpad.Item]]) { self.pages = pages }
+
+        func importLegacyLayout() -> Bool {
+            let alert = ImportPrompt.alert(for: pages)
+            for k in 0..<60 { later(0.2 + 0.02 * Double(k)) { keepAlertOnScreen() } }
+            later(1.4) {
+                guard let sheet = NSApp.modalWindow, let button = button(L("import.import", "Import"), in: sheet.contentView) else { return }
+                let frame = sheet.convertToScreen(button.convert(button.bounds, to: nil))
+                let p = rootPoint(fromScreen: CGPoint(x: frame.midX, y: frame.midY))
+                Pointer.glideLater(to: p, seconds: 0.5) {
+                    later(0.35) {
+                        record("click", at: p)
+                        button.performClick(nil)
+                    }
+                }
+            }
+            later(6.0) { if NSApp.modalWindow != nil { NSApp.abortModal() } }
+            guard alert.runModal() == .alertFirstButtonReturn else { return false }
+            model.applyImported(pages)
+            return true
+        }
+        func setHotkey(_ choice: HotkeyChoice) {}
+        func setHotCorner(_ corner: HotCorner) {}
+        func setPinch(_ fingers: PinchFingers) {}
+        func setLaunchAtLogin(_ on: Bool) {}
+        func confirmResetLayout() {}
+        func revealLayoutFile() {}
+        func openAccessibilitySettings() {}
+        func openURL(_ url: URL) {}
+    }
+
+    /// An old Launchpad layout for the import take: 4 pages and 9 folders of apps any Mac has, plus the global ones
+    /// the demo layout shows. Apps not installed here are left out when it is applied.
+    private static func demoOldLayout() -> [[LegacyLaunchpad.Item]] {
+        func app(_ id: String) -> LegacyLaunchpad.Item { .app(.init(bundleID: id, title: "")) }
+        func folder(_ title: String, _ ids: [String]) -> LegacyLaunchpad.Item {
+            .folder(title: title, apps: ids.map { .init(bundleID: $0, title: "") })
+        }
+        return [
+            ["com.apple.Safari", "com.google.Chrome", "com.apple.mail", "com.apple.iCal", "com.apple.Notes",
+             "com.apple.reminders", "com.apple.Maps", "com.apple.Photos", "com.apple.MobileSMS", "com.apple.FaceTime",
+             "com.tinyspeck.slackmacgap", "us.zoom.xos"].map(app)
+                + [folder("Work", ["com.apple.iWork.Keynote", "com.apple.iWork.Numbers", "com.apple.iWork.Pages"]),
+                   folder("Music", ["com.apple.Music", "com.spotify.client", "com.apple.podcasts"]),
+                   folder("Developer", ["com.microsoft.VSCode", "com.apple.Terminal", "com.figma.Desktop"])],
+            ["com.apple.AppStore", "com.apple.systempreferences", "com.apple.weather", "com.apple.clock",
+             "com.apple.calculator", "com.apple.freeform"].map(app)
+                + [folder("Watch", ["com.apple.TV", "com.apple.PhotoBooth", "com.apple.QuickTimePlayerX"]),
+                   folder("Reading", ["com.apple.iBooksX", "com.apple.news", "com.apple.stocks"]),
+                   folder("Home", ["com.apple.Home", "com.apple.findmy"])],
+            ["com.apple.VoiceMemos", "com.apple.shortcuts", "com.apple.Preview"].map(app)
+                + [folder("Utilities", ["com.apple.ActivityMonitor", "com.apple.Console", "com.apple.DiskUtility",
+                                        "com.apple.SystemProfiler"]),
+                   folder("Color", ["com.apple.Image_Capture", "com.apple.DigitalColorMeter", "com.apple.ColorSyncUtility"])],
+            ["com.apple.Dictionary", "com.apple.TextEdit", "com.apple.FontBook"].map(app)
+                + [folder("Other", ["com.apple.Stickies", "com.apple.grapher", "com.apple.ScreenSharing"])],
+        ]
+    }
+
+    private static func buttons(in view: NSView?) -> [NSButton] {
+        guard let view else { return [] }
+        return (view as? NSButton).map { [$0] } ?? view.subviews.flatMap { buttons(in: $0) }
     }
 
     private static func closeShot() {
@@ -488,12 +606,15 @@ enum FilmTake {
 extension FilmTake {
     /// The film's own grid, so a take shows what a new Mac has and none of the apps really installed here: system
     /// apps and Apple's apps in Launchpad's default arrangement (read from the Dock's own LaunchPadLayout.plist on
-    /// this Mac), the other system apps by name, then Visual Studio Code, WeChat and the film's dummy Sketchpad.
+    /// this Mac), the other system apps by name, then Chrome, Visual Studio Code, Slack, Spotify, Figma and Zoom
+    /// where installed.
     /// Read from `url` when it exists, so later takes show the same pages; otherwise built and written there.
     /// The saved layout (layout.json) is neither read nor written.
     static func loadDemoLayout(_ url: URL) {
         let order = DefaultOrder.read()
-        let extras = ["com.microsoft.VSCode", "com.tencent.xinWeChat", "app.launchmat.film.sketchpad"]
+        // Apps people everywhere know (film v4: no WeChat, no Chinese names, nothing else installed here).
+        let extras = ["com.google.Chrome", "com.microsoft.VSCode", "com.tinyspeck.slackmacgap", "com.spotify.client",
+                      "com.figma.Desktop", "us.zoom.xos"]
         let listed = Set(order.flatMap(\.bundleIDs) + extras)
         model.appFilter = { app in
             app.id.hasPrefix("/System/Applications/") || app.bundleID.map(listed.contains) == true

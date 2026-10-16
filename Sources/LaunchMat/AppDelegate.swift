@@ -375,18 +375,27 @@ extension AppDelegate: AppActions, GuideActions {
                               "\(error)\n\n" + L("import.nothing.body", "This only works on a Mac that used Launchpad before macOS 26."))
             return false
         }
-        let folders = pages.flatMap { $0 }.filter { if case .folder = $0 { return true } else { return false } }.count
-        let alert = NSAlert()
-        let pageCount = pages.count
-        alert.messageText = L("import.title", "Import the system Launchpad layout?")
-        alert.informativeText = L("import.body", "Found \(pageCount) pages and \(folders) folders. Your current LaunchMat layout will be replaced; apps Launchpad didn’t know about are added at the end.")
-        alert.addButton(withTitle: L("import.import", "Import"))
-        alert.addButton(withTitle: L("common.cancel", "Cancel"))
+        let alert = ImportPrompt.alert(for: pages)
         NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return false }
         let placed = model.applyImported(pages)
         Uninstaller.alert(L("import.done.title", "Imported"), L("import.done.body", "\(placed) apps placed from the Launchpad layout."))
         return true
+    }
+}
+
+/// The question before importing the old Launchpad layout (the film's import take shows the same one).
+@MainActor
+enum ImportPrompt {
+    static func alert(for pages: [[LegacyLaunchpad.Item]]) -> NSAlert {
+        let folders = pages.flatMap { $0 }.filter { if case .folder = $0 { return true } else { return false } }.count
+        let pageCount = pages.count
+        let alert = NSAlert()
+        alert.messageText = L("import.title", "Import the system Launchpad layout?")
+        alert.informativeText = L("import.body", "Found \(pageCount) pages and \(folders) folders. Your current LaunchMat layout will be replaced; apps Launchpad didn’t know about are added at the end.")
+        alert.addButton(withTitle: L("import.import", "Import"))
+        alert.addButton(withTitle: L("common.cancel", "Cancel"))
+        return alert
     }
 }
 
