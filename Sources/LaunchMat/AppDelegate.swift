@@ -455,6 +455,7 @@ enum Snapshot {
         host.frame = NSRect(origin: .zero, size: size)
         // The grid's own window class, so its fields look as they do on screen (selection, caret).
         let window = LaunchWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: .darkAqua) // as the grid's window
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(1.5))

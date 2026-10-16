@@ -72,6 +72,9 @@ final class LaunchWindowController: NSObject {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
+        // Full screen is always the dark appearance (spec 4 / 13): system colours, menus opened from the grid,
+        // fields and their selection resolve as in dark mode, whatever the system's setting.
+        window.appearance = NSAppearance(named: .darkAqua)
         window.isReleasedWhenClosed = false
         // Above the Dock and the menu bar, on every Space, next to full-screen apps.
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) + 1)
