@@ -80,10 +80,6 @@ struct RootView: View {
                         .overlay(alignment: .topTrailing) {
                             if !d.companions.isEmpty { CountBadge(count: d.companions.count + 1, size: m.iconSize) }
                         }
-                        .overlay(alignment: .topLeading) {
-                            // Pulled out of its folder (C7, placeholder until rea confirms when it shows).
-                            if d.sourceFolder != nil, d.extracted { MergeBadge(kind: .minus, iconSize: m.iconSize) }
-                        }
                         .scaleEffect(1.1)
                         .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
                         .position(x: d.location.x - d.grab.width, y: d.location.y - d.grab.height)
@@ -250,32 +246,11 @@ struct MergePlate: View {
         RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
             .fill(.white.opacity(0.3))
             .frame(width: size * 1.18, height: size * 1.18)
-            .overlay(alignment: .topLeading) {
-                MergeBadge(kind: .plus, iconSize: size).offset(x: -size * 0.06, y: -size * 0.06)
-            }
             .scaleEffect(active ? 1 : 0.72)
             .animation(active ? .interpolatingSpring(mass: 1, stiffness: 520, damping: 32)
                               : .interpolatingSpring(mass: 1, stiffness: 420, damping: 36), value: active)
             .opacity(active ? 1 : 0)
             .animation(active ? .easeOut(duration: 0.16) : .easeIn(duration: 0.12), value: active)
-    }
-}
-
-/// The ± badge of a merge (spec C7: folder.badge.plus / folder.badge.minus). When each one shows is a placeholder
-/// until rea confirms it: "+" on the plate while an app is held over a target, "−" on an app pulled out of its folder.
-struct MergeBadge: View {
-    enum Kind { case plus, minus }
-    let kind: Kind
-    let iconSize: CGFloat
-
-    var body: some View {
-        let d = iconSize * FolderMotion.badgeSize
-        Image(systemName: kind == .plus ? "plus" : "minus")
-            .font(.system(size: d * 0.5, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: d, height: d)
-            .background(Circle().fill(Color(white: 0.22).opacity(0.92)))
-            .overlay(Circle().stroke(.white.opacity(0.45), lineWidth: 0.5))
     }
 }
 
@@ -454,37 +429,33 @@ struct AppIconImage: View {
 }
 
 /// Launchpad folder tile: frosted rounded square with a 3×3 preview of its apps.
+/// A folder's icon: a plate 81% of the icon's size with up to nine of its apps in three columns (spec C7, measured):
+/// cells 0.24 of the plate, 0.024 apart, 0.116 from the edges, on whole pixels.
 struct FolderPreview: View {
     let icons: [NSImage?]
     let size: CGFloat
+    @Environment(\.displayScale) private var scale
 
     var body: some View {
-        let box = size * 0.82
-        let inner = box * 0.27
-        let gap = box * 0.05
-        ZStack {
-            RoundedRectangle(cornerRadius: box * 0.24, style: .continuous)
+        let px = { (v: CGFloat) in (v * scale).rounded() / scale }
+        let side = size * FolderMotion.previewPlate
+        let cell = px(side * FolderMotion.previewCell)
+        let step = side * (FolderMotion.previewCell + FolderMotion.previewGap)
+        let margin = side * FolderMotion.previewMargin
+        let shape = RoundedRectangle(cornerRadius: FolderMotion.previewRadius(side), style: .continuous)
+        ZStack(alignment: .topLeading) {
+            shape
                 .fill(.white.opacity(0.24))
-                .overlay(
-                    RoundedRectangle(cornerRadius: box * 0.24, style: .continuous)
-                        .stroke(.white.opacity(0.3), lineWidth: 0.6)
-                )
-            VStack(spacing: gap) {
-                ForEach(0..<3, id: \.self) { r in
-                    HStack(spacing: gap) {
-                        ForEach(0..<3, id: \.self) { c in
-                            let i = r * 3 + c
-                            if i < icons.count, let img = icons[i] {
-                                Image(nsImage: img).resizable().interpolation(.high).frame(width: inner, height: inner)
-                            } else {
-                                Color.clear.frame(width: inner, height: inner)
-                            }
-                        }
-                    }
+                .overlay(shape.stroke(.white.opacity(0.3), lineWidth: 0.6))
+            ForEach(0..<min(9, icons.count), id: \.self) { i in
+                if let img = icons[i] {
+                    Image(nsImage: img).resizable().interpolation(.high)
+                        .frame(width: cell, height: cell)
+                        .offset(x: px(margin + CGFloat(i % 3) * step), y: px(margin + CGFloat(i / 3) * step))
                 }
             }
         }
-        .frame(width: box, height: box)
+        .frame(width: side, height: side)
         .frame(width: size, height: size)
     }
 }
@@ -507,8 +478,11 @@ struct FolderOverlay: View {
         let size = model.metrics.size
         let icon = model.folderIconFrame(folderID)
             ?? CGRect(x: panel.frame.midX, y: panel.frame.midY, width: 0, height: 0)
-        let rect = open ? panel.frame : icon
-        let radius = open ? FolderMotion.panelRadius : icon.width * FolderMotion.iconRadius
+        // From the icon's preview plate (81% of the icon, centred) to the panel.
+        let iconSide = (icon.width * FolderMotion.previewPlate).rounded()
+        let plate = icon.insetBy(dx: (icon.width - iconSide) / 2, dy: (icon.height - iconSide) / 2)
+        let rect = open ? panel.frame : plate
+        let radius = open ? FolderMotion.panelRadius(panel.frame.size) : FolderMotion.previewRadius(iconSide)
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         ZStack(alignment: .topLeading) {
             Color.black.opacity(open ? FolderMotion.backdropDim : 0)
@@ -532,7 +506,7 @@ struct FolderOverlay: View {
                 }
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .scaleEffect(open ? 1 : FolderMotion.contentScale,
+            .scaleEffect(open ? 1 : FolderMotion.contentScale(gridIcon: icon.width, panelIcon: panel.iconSize),
                          anchor: UnitPoint(x: icon.midX / max(1, size.width), y: icon.midY / max(1, size.height)))
             .opacity(open ? 1 : 0)
             .mask(alignment: .topLeading) {
@@ -574,12 +548,15 @@ struct FolderOverlay: View {
     }
 }
 
-/// The grid behind an open folder blurs as the panel grows and clears as it shrinks.
+/// The grid behind an open folder shrinks to 94% and fades almost out as the panel grows, and comes back as it
+/// shrinks (spec C8/C9, folder.base).
 struct FolderBackdrop: ViewModifier {
     @ObservedObject var presentation: FolderPresentation
 
     func body(content: Content) -> some View {
-        content.blur(radius: presentation.expanded ? FolderMotion.backdropBlur : 0)
+        content
+            .scaleEffect(presentation.expanded ? FolderMotion.baseScale : 1)
+            .opacity(presentation.expanded ? FolderMotion.baseOpacity : 1)
     }
 }
 
