@@ -137,9 +137,10 @@ enum FilmTake {
         wait(1.8)
     }
 
-    /// Hold Music over Podcasts until they make a folder, name it "Listen", close the folder, and write the layout to
+    /// Hold Music over Podcasts until they make a folder, close it after a beat, and write the layout to
     /// <takes>/folder.layout.json: the search take can use it as its --demo-layout, so the two grids follow on.
-    /// `--from`, `--onto` and `--name` choose other apps (by name) and another name (film v4: Notes, Reminders, Plans).
+    /// `--from` and `--onto` choose other apps (by name); `--name` types a name over the folder's own. Tight, for a
+    /// beat of about 4.5 s.
     private static func folderShot() {
         openGrid()
         let fromName = value("--from"), ontoName = value("--onto")
@@ -150,32 +151,32 @@ enum FilmTake {
         }
         goTo(music.page)
         let m = model.metrics
-        drag(from: m.iconCenter(music.slot), to: m.iconCenter(podcasts.slot), seconds: 1.0, hold: 0.9)
-        wait(1.2)
+        // Held over the target only as long as spec C6 takes to offer the folder (0.1 s, then the plate pops).
+        drag(from: m.iconCenter(music.slot), to: m.iconCenter(podcasts.slot), seconds: 0.8, hold: 0.3)
+        wait(0.45) // the folder opens (0.28 s)
         if model.openFolder == nil, let id = model.layout.folders.first(where: { $0.value.apps.count == 2 })?.key,
            let i = model.layout.pages[model.currentPage].firstIndex(of: .folder(id)) {
             click(m.iconCenter(i))
-            wait(1.0)
+            wait(0.45)
         }
         guard let id = model.openFolder else { fail("no folder opened after the drop") }
         let panel = model.folderPanel(for: id)
-        let title = CGPoint(x: panel.frame.midX, y: panel.frame.minY + panel.header * 0.55)
-        click(title)
-        // Off the name, so the pointer doesn't hide it.
-        Pointer.glide(to: CGPoint(x: title.x + 80, y: title.y + 80), seconds: 0.35)
-        wait(0.3)
-        let name = model.folderNameBinding(id)
-        key("cmd+a", code: 0, characters: "a", modifiers: .command)
-        // Select All, whether or not the key reached a menu.
-        if editing { (window.firstResponder as? NSTextView)?.selectAll(nil) } else { name.wrappedValue = "" }
-        wait(0.3)
-        type(value("--name") ?? "Listen", interval: 0.09, value: { name.wrappedValue }) { name.wrappedValue += $0 }
-        wait(0.5)
-        key("return", code: 36, characters: "\r")
-        wait(1.0)
-        // Blank space below the panel closes the folder.
-        click(CGPoint(x: panel.frame.midX, y: (panel.frame.maxY + m.size.height) / 2))
-        wait(2.0)
+        // A name only with --name, typed once over the selected default (no Select All and retyping); without it the
+        // folder keeps its own name.
+        if let newName = value("--name") {
+            let title = CGPoint(x: panel.frame.midX, y: panel.frame.minY + panel.header * 0.55)
+            click(title, pause: 0.2)
+            Pointer.glide(to: CGPoint(x: title.x + 80, y: title.y + 80), seconds: 0.3) // off the name
+            let name = model.folderNameBinding(id)
+            if editing { (window.firstResponder as? NSTextView)?.selectAll(nil) } else { name.wrappedValue = "" }
+            type(newName, interval: 0.06, pause: 0.1, value: { name.wrappedValue }) { name.wrappedValue += $0 }
+            key("return", code: 36, characters: "\r")
+        }
+        // About 0.6 s, then blank space below the panel closes the folder; the pointer is on its way meanwhile.
+        let blank = CGPoint(x: panel.frame.midX, y: (panel.frame.maxY + m.size.height) / 2)
+        Pointer.glide(to: blank, seconds: 0.4)
+        click(blank, pause: 0.2)
+        wait(1.5)
         if model.openFolder != nil { model.closeFolder() }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -395,9 +396,9 @@ enum FilmTake {
 
     /// A text field tracks the press in its own loop, reading the release from the app's event queue: for one, the
     /// release is queued first.
-    private static func click(_ p: CGPoint, textField: Bool = false) {
+    private static func click(_ p: CGPoint, textField: Bool = false, pause: Double = 0.45) {
         Pointer.glide(to: p)
-        wait(0.45)
+        wait(pause)
         record("click", at: p)
         if textField, let up = mouseEvent(.leftMouseUp, p) {
             NSApp.postEvent(up, atStart: false)
@@ -467,8 +468,9 @@ enum FilmTake {
 
     /// Types `text` one character at a time into the field whose text `value` reads; a character that didn't arrive
     /// is added by `fallback`.
-    private static func type(_ text: String, interval: Double, value: () -> String, fallback: (String) -> Void) {
-        wait(0.45)
+    private static func type(_ text: String, interval: Double, pause: Double = 0.45, value: () -> String,
+                             fallback: (String) -> Void) {
+        wait(pause)
         for ch in text {
             record("type", text: String(ch))
             let before = value()
@@ -756,6 +758,7 @@ private enum Pointer {
     /// Ease-in-out from where it is, about 0.35–0.8 s depending on the distance.
     static func glide(to p: CGPoint, seconds: Double? = nil) {
         let from = at
+        guard hypot(p.x - from.x, p.y - from.y) >= 1 else { return } // already there
         let duration = seconds ?? travel(from, p)
         let frames = max(1, Int(duration * 60))
         for k in 1...frames {
