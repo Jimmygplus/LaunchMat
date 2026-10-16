@@ -32,11 +32,11 @@ struct RootView: View {
                             Image(systemName: "ellipsis")
                                 .font(.system(size: 13, weight: .semibold))
                                 .frame(width: 30, height: 30)
-                                .overlay(Circle().stroke(.white.opacity(0.28), lineWidth: 0.5))
-                                .contentShape(Circle())
+                                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .modifier(GlassBase(cornerRadius: 12))
                         .help(L("grid.menu", "Menu"))
                         .accessibilityLabel(L("grid.menu", "Menu"))
                     }
@@ -160,6 +160,8 @@ struct VisualEffect: NSViewRepresentable {
     }
 }
 
+/// The search field in full screen (spec, section 4): fixed colours, whatever the system appearance or the picture
+/// behind. Typed text and the magnifier white; the placeholder and the clear button white 0.6; corners 20; on glass.
 struct SearchField: View {
     @Binding var text: String
     var focused: FocusState<Bool>.Binding
@@ -167,21 +169,45 @@ struct SearchField: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.white.opacity(0.75))
-            TextField("", text: $text, prompt: Text(L("search.prompt", "Search")).foregroundStyle(.white.opacity(0.6)))
-                .textFieldStyle(.plain)
                 .foregroundStyle(.white)
-                .focused(focused)
+            ZStack(alignment: .leading) {
+                // Drawn here: a field's own prompt takes the system's placeholder colour, dark in light mode.
+                if text.isEmpty {
+                    Text(L("search.prompt", "Search"))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .allowsHitTesting(false)
+                }
+                TextField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(.white)
+                    .focused(focused)
+            }
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(.white.opacity(0.6))
             }
         }
         .font(.system(size: 14))
         .padding(.horizontal, 10)
         .frame(height: 30)
-        .overlay(Capsule().stroke(.white.opacity(0.28), lineWidth: 0.5))
+        .modifier(GlassBase(cornerRadius: 20))
+    }
+}
+
+/// The search field's and the ⋯ button's base: glass on macOS 26 (it adapts to what is behind it, as LaunchOS's
+/// adaptive glass does), white 0.2 before.
+struct GlassBase: ViewModifier {
+    let cornerRadius: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if #available(macOS 26, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content.background(shape.fill(.white.opacity(0.2)))
+        }
     }
 }
 
