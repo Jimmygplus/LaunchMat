@@ -124,7 +124,8 @@ struct BackgroundView: View {
 
     var body: some View {
         // No live blur of the windows behind: a dark backdrop until the prepared wallpaper is there, then the
-        // wallpaper fades in over it.
+        // wallpaper fades in over it (0.36 s). It is already darkened and made richer (Wallpaper.blur), so nothing
+        // is laid over it.
         ZStack {
             LinearGradient(colors: [Color(white: 0.16), Color(white: 0.07)], startPoint: .top, endPoint: .bottom)
             if let image {
@@ -134,7 +135,6 @@ struct BackgroundView: View {
                     .transition(.opacity)
                     .id(ObjectIdentifier(image))
             }
-            Color.black.opacity(0.2)
         }
     }
 }

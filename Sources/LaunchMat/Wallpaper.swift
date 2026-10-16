@@ -31,7 +31,8 @@ enum Wallpaper {
             guard cache[key] == nil, pending.insert(key).inserted else { continue }
             let display = screen.displayID
             Task.detached(priority: .utility) {
-                let image = WallpaperImage(cg: capture(display).flatMap(blur))
+                let width = CGDisplayBounds(display).width
+                let image = WallpaperImage(cg: capture(display).flatMap { blur($0, screenWidth: width) })
                 await MainActor.run {
                     pending.remove(key)
                     if let cg = image.cg { cache[key] = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)) }
@@ -45,7 +46,7 @@ enum Wallpaper {
     static func blurred(for screen: NSScreen) -> NSImage? {
         let key = key(for: screen)
         if let hit = cache[key] { return hit }
-        guard let cg = capture(screen.displayID).flatMap(blur) else { return nil }
+        guard let cg = capture(screen.displayID).flatMap({ blur($0, screenWidth: screen.frame.width) }) else { return nil }
         let image = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
         cache[key] = image
         return image
@@ -84,13 +85,27 @@ enum Wallpaper {
         return image
     }
 
-    /// Pre-blurred, downscaled copy (Launchpad blurs the wallpaper, not the windows).
-    nonisolated static func blur(_ image: CGImage) -> CGImage? {
+    /// The picture behind the grid, as LaunchOS makes it (spec 13.1): darker (RGB × 0.7), more saturated (× 1.4),
+    /// then blurred with a radius of 30 pt on the screen, in a 900 px wide copy. Made once, in the background; it
+    /// fades in when ready (0.36 s), and nothing is laid over it.
+    nonisolated static func blur(_ image: CGImage, screenWidth: CGFloat) -> CGImage? {
         let source = CIImage(cgImage: image)
         guard source.extent.width > 0 else { return nil }
         let scale = 900 / source.extent.width
         let small = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        let blurred = small.clampedToExtent().applyingGaussianBlur(sigma: 22).cropped(to: small.extent)
+        let darker = small.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: 0.7, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: 0.7, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 0.7, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+        ])
+        let richer = darker.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 1.4, kCIInputBrightnessKey: 0, kCIInputContrastKey: 1,
+        ])
+        // 30 pt on a screen `screenWidth` wide is 30 × 900 / width pixels in the copy.
+        let radius = 30 * 900 / max(1, screenWidth)
+        let blurred = richer.clampedToExtent().applyingGaussianBlur(sigma: radius).cropped(to: small.extent)
         return CIContext().createCGImage(blurred, from: small.extent)
     }
 }
