@@ -17,8 +17,9 @@ import SwiftUI
 /// - A pointer drawn by the app (the system arrow) glides to each action and moves with every synthetic event, so in
 ///   the recording it and a dragged icon follow the same path. Record without the system pointer.
 ///
-/// Shots: open (open the grid, page 2, back), folder (hold Podcasts over Music, rename the folder), search (vsc,
-/// clear, wx, no Return), uninstall (right-click Sketchpad › Move to Trash…, the leftovers list, Cancel), close (Esc).
+/// Shots: open (open the grid, page 2, back), folder (hold Music over Podcasts, name the folder "Listen", close it),
+/// search (wx, clear, vsc, no Return), uninstall (right-click Sketchpad › Move to Trash…, the leftovers list,
+/// Cancel), close (Esc).
 /// Pauses follow the film's pacing: a beat before each action, and a beat after it.
 @MainActor
 enum FilmTake {
@@ -114,25 +115,31 @@ enum FilmTake {
         guard model.pageCount >= 2 else { fail("the layout has one page; the open shot turns to page 2") }
         let m = model.metrics
         // Both presses land between two icons of the middle row, which is blank on every page (the end of the first
-        // drag is not: on page 2 an icon may sit there).
+        // drag is not: on page 2 an icon may sit there). The drag stays within the distance the pages follow 1:1
+        // (Paging.follow: 8% of the width, 48–72 pt), past the 50 pt that turns the page: the pointer stays on the
+        // point it grabbed, and on release the page settles on the next one.
         let row = m.iconCenter(model.gridSize.cols).y
         let gap = CGPoint(x: m.cellCenter(model.gridSize.cols / 2).x + m.cell.width / 2, y: row)
-        drag(from: gap, to: CGPoint(x: gap.x - 320, y: row), seconds: 0.55)
+        let oneToOne = min(72, max(48, Double(m.size.width) * 0.08))
+        let distance = CGFloat(max(Paging.threshold + 6, oneToOne - 4))
+        drag(from: gap, to: CGPoint(x: gap.x - distance, y: row), seconds: 0.4)
         wait(1.6)
         guard model.isBlank(at: gap) else { fail("the gap between icons isn't blank on page 2") }
-        drag(from: gap, to: CGPoint(x: gap.x + 320, y: row), seconds: 0.55)
+        drag(from: gap, to: CGPoint(x: gap.x + distance, y: row), seconds: 0.4)
         wait(1.8)
     }
 
+    /// Hold Music over Podcasts until they make a folder, name it "Listen", close the folder, and write the layout to
+    /// <takes>/folder.layout.json: the search take can use it as its --demo-layout, so the two grids follow on.
     private static func folderShot() {
         openGrid()
-        guard let podcasts = slot(bundleID: "com.apple.podcasts", name: "Podcasts"),
-              let music = slot(bundleID: "com.apple.Music", name: "Music"), podcasts.page == music.page else {
-            fail("Podcasts and Music must be on the same page (record.sh prepare puts them on page 1)")
+        guard let music = slot(bundleID: "com.apple.Music", name: "Music"),
+              let podcasts = slot(bundleID: "com.apple.podcasts", name: "Podcasts"), podcasts.page == music.page else {
+            fail("Music and Podcasts must be on the same page (the demo layout or record.sh prepare puts them on page 1)")
         }
-        goTo(podcasts.page)
+        goTo(music.page)
         let m = model.metrics
-        drag(from: m.iconCenter(podcasts.slot), to: m.iconCenter(music.slot), seconds: 1.0, hold: 0.9)
+        drag(from: m.iconCenter(music.slot), to: m.iconCenter(podcasts.slot), seconds: 1.0, hold: 0.9)
         wait(1.2)
         if model.openFolder == nil, let id = model.layout.folders.first(where: { $0.value.apps.count == 2 })?.key,
            let i = model.layout.pages[model.currentPage].firstIndex(of: .folder(id)) {
@@ -141,30 +148,42 @@ enum FilmTake {
         }
         guard let id = model.openFolder else { fail("no folder opened after the drop") }
         let panel = model.folderPanel(for: id)
-        click(CGPoint(x: panel.frame.midX, y: panel.frame.minY + panel.header * 0.55), textField: true)
-        wait(0.6)
+        let title = CGPoint(x: panel.frame.midX, y: panel.frame.minY + panel.header * 0.55)
+        click(title, textField: true)
+        // Off the name, so the pointer doesn't hide it.
+        Pointer.glide(to: CGPoint(x: title.x + 80, y: title.y + 80), seconds: 0.35)
+        wait(0.3)
         let name = model.folderNameBinding(id)
         key("cmd+a", code: 0, characters: "a", modifiers: .command)
         // Select All, whether or not the key reached a menu.
         if editing { (window.firstResponder as? NSTextView)?.selectAll(nil) } else { name.wrappedValue = "" }
         wait(0.3)
-        type("Listening", interval: 0.09, value: { name.wrappedValue }) { name.wrappedValue += $0 }
+        type("Listen", interval: 0.09, value: { name.wrappedValue }) { name.wrappedValue += $0 }
         wait(0.5)
         key("return", code: 36, characters: "\r")
-        wait(1.8)
+        wait(1.0)
+        // Blank space below the panel closes the folder.
+        click(CGPoint(x: panel.frame.midX, y: (panel.frame.maxY + m.size.height) / 2))
+        wait(2.0)
+        if model.openFolder != nil { model.closeFolder() }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let file = output.deletingLastPathComponent().appendingPathComponent("folder.layout.json")
+        try? encoder.encode(model.layout).write(to: file)
+        print("film-take folder: layout after the take → \(file.path)")
     }
 
     private static func searchShot() {
         openGrid()
-        type("vsc", interval: 0.2, value: { model.query }) { model.query += $0 }
-        wait(1.4)
-        for _ in 0..<3 {
+        type("wx", interval: 0.2, value: { model.query }) { model.query += $0 }
+        wait(2.0)
+        for _ in 0..<2 {
             key("delete", code: 51, characters: "\u{7F}", value: { model.query }) { if !model.query.isEmpty { model.query.removeLast() } }
             wait(0.14)
         }
         wait(0.7)
-        type("wx", interval: 0.2, value: { model.query }) { model.query += $0 }
-        wait(2.2)
+        type("vsc", interval: 0.2, value: { model.query }) { model.query += $0 }
+        wait(2.0)
     }
 
     private static func uninstallShot() {

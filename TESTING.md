@@ -69,9 +69,9 @@ LaunchMat.app/Contents/MacOS/LaunchMat --film-take open --takes ~/x-ops/film/tak
 
 | Shot | What it does |
 |---|---|
-| `open` | a beat, then the grid opens (as ⇧⌘Space does), turns to page 2 and back |
-| `folder` | holds Podcasts over Music until they make a folder, then renames it "Listening" |
-| `search` | types v, s, c, deletes them, types w, x (no Return) |
+| `open` | a beat, then the grid opens (as ⇧⌘Space does), turns to page 2 and back with short drags the pages follow 1:1 |
+| `folder` | holds Music over Podcasts until they make a folder, names it "Listen" (⌘A, Return), closes the folder; writes the layout to `<takes>/folder.layout.json` for the search take's `--demo-layout` |
+| `search` | types w, x, deletes them, types v, s, c (no Return) |
 | `uninstall` | right-clicks Sketchpad, picks Move to Trash…, shows the leftovers list for about 4 s, then Cancel |
 | `close` | Esc closes the grid |
 
