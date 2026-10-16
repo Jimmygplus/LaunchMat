@@ -366,13 +366,14 @@ struct EntryCell: View {
                     }
                 }
                 .modifier(Jiggle(active: model.optionHeld))
+            // White, Body size, a soft shadow (black 0.26, blur 2, 1 pt down), as LaunchOS's names (spec, section 4).
             Text(model.title(for: entry))
-                .font(.system(size: metrics.labelFont, weight: .medium))
+                .font(.body)
                 .foregroundStyle(.white)
                 // A name that changes (the target app becoming its folder) changes at once: a fading old name
                 // would stay behind where the cell was.
                 .contentTransition(.identity)
-                .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+                .shadow(color: .black.opacity(0.26), radius: 2, y: 1)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(width: metrics.cell.width * 0.94)
@@ -603,8 +604,9 @@ struct FolderAppCell: View {
                 }
                 .modifier(Jiggle(active: model.optionHeld))
             Text(model.title(for: .app(path)))
-                .font(.system(size: font, weight: .medium))
+                .font(.body)
                 .foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.26), radius: 2, y: 1)
                 .lineLimit(1)
                 .frame(width: panel.cell.width * 0.94)
         }

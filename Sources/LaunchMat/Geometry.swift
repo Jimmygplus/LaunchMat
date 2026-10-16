@@ -40,7 +40,8 @@ struct GridMetrics: Equatable {
 
     var cell: CGSize { CGSize(width: gridRect.width / CGFloat(cols), height: gridRect.height / CGFloat(rows)) }
     var iconSize: CGFloat { floor(min(cell.width * 0.6, cell.height * 0.64, 132)) }
-    var labelFont: CGFloat { max(11, min(14, iconSize * 0.12)) }
+    /// App names are the system font at Body size (13 pt), as LaunchOS's (spec, section 4).
+    var labelFont: CGFloat { 13 }
     var labelSpacing: CGFloat { 6 }
     /// Height of icon + gap + one text line; the cell's content is centered on the cell.
     var contentHeight: CGFloat { iconSize + labelSpacing + labelFont * 1.3 }
