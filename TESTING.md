@@ -64,7 +64,7 @@ needed. Each shot hands synthetic events to the app (as `--mouse-test` does; the
 draws its own) and logs what it did. It uses the saved layout but saves nothing, opens no app and trashes nothing.
 
 ```bash
-LaunchMat.app/Contents/MacOS/LaunchMat --film-take open --takes ~/x-ops/film/takes
+LaunchMat.app/Contents/MacOS/LaunchMat --film-take open --takes ~/x-ops/film/takes --demo-layout ~/x-ops/film/demo-layout.json
 ```
 
 | Shot | What it does |
@@ -81,7 +81,15 @@ LaunchMat.app/Contents/MacOS/LaunchMat --film-take open --takes ~/x-ops/film/tak
   the screen from its top left; a drag ends at (`x2`, `y2`) at `t2`; keys and typed characters are in `text`.
 - **Screen:** the built-in display, unless `--screen main`. The first line printed names it and gives its
   `screencapture -D` number. Record that display.
-- **Staging:** `record.sh prepare` puts Podcasts, Music and the dummy Sketchpad on page 1. `--fresh` uses the
-  default arrangement instead (to try a shot without staging); the grid then turns to the right page first.
+- **Demo layout:** `--demo-layout FILE` shows the film's own grid instead of the saved one (which is neither read nor
+  written): system apps and Apple's apps in Launchpad's default arrangement (from the Dock's `LaunchPadLayout.plist`),
+  the other system apps by name, then Visual Studio Code, WeChat and the dummy Sketchpad. It is read from FILE when
+  that exists, otherwise built and written there. `--film-take layout --demo-layout FILE` only prepares it and
+  prints the pages, showing nothing.
+- **Staging without a demo layout:** `record.sh prepare` puts Podcasts, Music and the dummy Sketchpad on page 1.
+  `--fresh` uses the default arrangement instead; the grid then turns to the right page first.
+- **Pointer:** the app draws the system arrow in a window of its own above everything it shows. It glides to each
+  action and moves with every synthetic event, so it and a dragged icon follow one path. Record without the system
+  pointer.
 - **Pacing:** a beat (about 0.45 s) before each action and one after it, per the film's pacing notes.
 - A release build refuses `--film-take`. Screen time is shared: ask the coordinator first (`~/jimmy-hq/SCREEN.md`).
