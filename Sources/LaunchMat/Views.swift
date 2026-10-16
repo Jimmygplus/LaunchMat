@@ -466,6 +466,7 @@ struct FolderPreview: View {
 struct FolderOverlay: View {
     @ObservedObject var model: LaunchpadModel
     let folderID: UUID
+    @FocusState private var naming: Bool
 
     var body: some View {
         let panel = model.folderPanel(for: folderID)
@@ -494,6 +495,10 @@ struct FolderOverlay: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.white)
                 .frame(width: max(120, panel.frame.width - 80))
+                // Return keeps the name and ends the editing; otherwise the field selects its text again and looks
+                // as if it were still being edited.
+                .focused($naming)
+                .onSubmit { naming = false }
                 .position(x: panel.frame.midX, y: panel.frame.minY + panel.header * 0.55)
 
             ForEach(Array(apps.enumerated()), id: \.element) { i, path in

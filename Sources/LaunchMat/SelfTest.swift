@@ -243,6 +243,48 @@ enum SelfTest {
         check("paging: the same gap is blank on page 2", model.isBlank(at: gap))
         drag(from: gap, by: 320)
         check("paging: a drag right from the same gap turns back to page 1", model.currentPage == 0 && model.drag == nil)
+
+        // 15. Naming a folder: Return keeps the name and ends the editing (the field used to select its text again).
+        if let (page, slot, id) = model.layout.pages.enumerated().lazy.compactMap({ p, entries in
+            entries.enumerated().first { if case .folder = $0.element { return true } else { return false } }
+                .flatMap { s in if case .folder(let id) = s.element { return (p, s.offset, id) } else { return nil } }
+        }).first {
+            model.go(to: page)
+            wait(0.6)
+            model.activate(model.layout.pages[page][slot])
+            settle()
+            let panel = model.folderPanel(for: id)
+            let title = CGPoint(x: panel.frame.midX, y: panel.frame.minY + panel.header * 0.55)
+            let window = controller.window
+            func event(_ type: NSEvent.EventType) -> NSEvent? {
+                NSEvent.mouseEvent(with: type, location: NSPoint(x: title.x, y: window.frame.height - title.y), modifierFlags: [],
+                                   timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                   context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
+            }
+            // A text field reads the release from the event queue while it tracks the press.
+            if let up = event(.leftMouseUp), let down = event(.leftMouseDown) {
+                NSApp.postEvent(up, atStart: false)
+                window.sendEvent(down)
+            }
+            wait(0.3)
+            let editor = window.firstResponder as? NSTextView
+            check("folder name: a click starts editing it", editor != nil)
+            editor?.selectAll(nil)
+            editor?.insertText("Listen", replacementRange: editor?.selectedRange() ?? NSRange())
+            if let enter = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                            windowNumber: window.windowNumber, context: nil, characters: "\r",
+                                            charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36) {
+                window.sendEvent(enter)
+            }
+            settle()
+            let after = window.firstResponder as? NSTextView
+            check("folder name: Return keeps \"Listen\" and ends the editing (nothing left selected)",
+                  model.layout.folders[id]?.name == "Listen" && !(after?.string == "Listen" && (after?.selectedRange().length ?? 0) > 0))
+            model.closeFolder()
+            wait(0.5)
+        } else {
+            print("SKIP  folder name: no folder in the layout")
+        }
         controller.hide()
         wait(0.5)
     }
