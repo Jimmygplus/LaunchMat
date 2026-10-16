@@ -55,10 +55,11 @@ struct RootView: View {
                     PageDots(pager: model.pager, count: model.pageCount) { model.go(to: $0) }
                         .position(x: geo.size.width / 2, y: geo.size.height - m.bottomInset * 0.5)
                 }
+                .modifier(FolderBackdrop(presentation: model.folderPresentation))
 
                 if let id = model.openFolder {
-                    FolderOverlay(model: model, folderID: id)
-                        .transition(.opacity)
+                    // Comes and goes at once; the panel itself grows out of its icon and back (FolderMotion).
+                    FolderOverlay(model: model, presentation: model.folderPresentation, folderID: id)
                 }
 
                 if let card = model.whatsNew {
@@ -463,50 +464,97 @@ struct FolderPreview: View {
     }
 }
 
+/// An opened folder: the grid behind dims (and blurs, see FolderBackdrop), and the panel grows out of the folder's
+/// icon into place and back (FolderMotion). Everything here is SwiftUI, so it all animates; the system materials
+/// used before vanished at once when the folder closed. The name is text until clicked, then a field.
 struct FolderOverlay: View {
     @ObservedObject var model: LaunchpadModel
+    @ObservedObject var presentation: FolderPresentation
     let folderID: UUID
+    @State private var editingName = false
     @FocusState private var naming: Bool
 
     var body: some View {
         let panel = model.folderPanel(for: folderID)
         let apps = model.layout.folders[folderID]?.apps ?? []
         let extracting = model.drag?.extracted == true
+        let open = presentation.expanded
+        let size = model.metrics.size
+        let icon = model.folderIconFrame(folderID)
+            ?? CGRect(x: panel.frame.midX, y: panel.frame.midY, width: 0, height: 0)
+        let rect = open ? panel.frame : icon
+        let radius = open ? FolderMotion.panelRadius : icon.width * FolderMotion.iconRadius
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         ZStack(alignment: .topLeading) {
-            // The grid behind an open folder is blurred by this layer, which exists only while the folder is open.
-            ZStack {
-                VisualEffect(material: .fullScreenUI, blending: .withinWindow)
-                Color.black.opacity(0.15)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { model.closeFolder() }
-
-            VisualEffect(material: .hudWindow, blending: .withinWindow)
-                .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(.white.opacity(0.2), lineWidth: 0.6))
-                .frame(width: panel.frame.width, height: panel.frame.height)
+            Color.black.opacity(open ? FolderMotion.backdropDim : 0)
                 .contentShape(Rectangle())
+                .onTapGesture { model.closeFolder() }
+
+            shape
+                .fill(Color(white: 0.06).opacity(0.55))
+                .overlay(shape.stroke(.white.opacity(0.18), lineWidth: 0.6))
+                .frame(width: rect.width, height: rect.height)
+                .contentShape(shape)
                 .onTapGesture {}
-                .position(x: panel.frame.midX, y: panel.frame.midY)
+                .position(x: rect.midX, y: rect.midY)
 
-            TextField(L("folder.namePlaceholder", "Folder"), text: model.folderNameBinding(folderID))
-                .textFieldStyle(.plain)
-                .font(.system(size: 24, weight: .semibold))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.white)
-                .frame(width: max(120, panel.frame.width - 80))
-                // Return keeps the name and ends the editing; otherwise the field selects its text again and looks
-                // as if it were still being edited.
-                .focused($naming)
-                .onSubmit { naming = false }
-                .position(x: panel.frame.midX, y: panel.frame.minY + panel.header * 0.55)
-
-            ForEach(Array(apps.enumerated()), id: \.element) { i, path in
-                FolderAppCell(model: model, path: path, folderID: folderID, panel: panel, center: panel.center(i))
-                    .position(panel.center(i))
+            // The content sits where it ends up and is revealed by the panel's shape as it grows.
+            ZStack(alignment: .topLeading) {
+                title(panel: panel)
+                ForEach(Array(apps.enumerated()), id: \.element) { i, path in
+                    FolderAppCell(model: model, path: path, folderID: folderID, panel: panel, center: panel.center(i))
+                        .position(panel.center(i))
+                }
+            }
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .scaleEffect(open ? 1 : FolderMotion.contentScale,
+                         anchor: UnitPoint(x: icon.midX / max(1, size.width), y: icon.midY / max(1, size.height)))
+            .opacity(open ? 1 : 0)
+            .mask(alignment: .topLeading) {
+                shape.frame(width: rect.width, height: rect.height).position(x: rect.midX, y: rect.midY)
             }
         }
         .opacity(extracting ? 0 : 1)
+        .allowsHitTesting(open)
+        .onChange(of: open) { _, isOpen in if !isOpen { naming = false } }
+    }
+
+    /// The name; a click turns it into a field. Return keeps the name and ends the editing (the field used to select
+    /// its text again and look as if it were still being edited).
+    @ViewBuilder
+    private func title(panel: FolderPanel) -> some View {
+        let name = model.folderNameBinding(folderID)
+        let width = max(120, panel.frame.width - 80)
+        Group {
+            if editingName {
+                TextField(L("folder.namePlaceholder", "Folder"), text: name)
+                    .textFieldStyle(.plain)
+                    .focused($naming)
+                    .onSubmit { naming = false }
+                    .onAppear { naming = true }
+                    .onChange(of: naming) { _, focused in if !focused { editingName = false } }
+            } else {
+                Text(name.wrappedValue.isEmpty ? L("folder.namePlaceholder", "Folder") : name.wrappedValue)
+                    .lineLimit(1)
+                    .frame(width: width)
+                    .contentShape(Rectangle())
+                    .onTapGesture { editingName = true }
+            }
+        }
+        .font(.system(size: 24, weight: .semibold))
+        .multilineTextAlignment(.center)
+        .foregroundStyle(.white)
+        .frame(width: width)
+        .position(x: panel.frame.midX, y: panel.frame.minY + panel.header * 0.55)
+    }
+}
+
+/// The grid behind an open folder blurs as the panel grows and clears as it shrinks.
+struct FolderBackdrop: ViewModifier {
+    @ObservedObject var presentation: FolderPresentation
+
+    func body(content: Content) -> some View {
+        content.blur(radius: presentation.expanded ? FolderMotion.backdropBlur : 0)
     }
 }
 

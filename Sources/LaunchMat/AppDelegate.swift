@@ -420,7 +420,10 @@ enum Snapshot {
         if let q = value("--query") { model.query = q }
         if let p = value("--page").flatMap(Int.init) { model.currentPage = min(p, model.pageCount - 1) }
         if let s = value("--select").flatMap(Int.init) { model.selection = s }
-        if args.contains("--open-folder") { model.openFolder = model.firstFolderID }
+        if args.contains("--open-folder") {
+            model.openFolder = model.firstFolderID
+            model.folderPresentation.expanded = true // as it is once open
+        }
         if args.contains("--whats-new") { model.whatsNew = WhatsNew.current }
 
         let host = NSHostingView(rootView: RootView(model: model))

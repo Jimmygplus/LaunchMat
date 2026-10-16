@@ -68,7 +68,13 @@ final class LaunchpadModel: ObservableObject {
         didSet { if oldValue != query { updateSearch() } }
     }
     @Published private(set) var results: [AppRecord] = []
-    @Published var openFolder: UUID?
+    @Published var openFolder: UUID? {
+        // Closed at once (the grid hid, the folder dissolved…): nothing stays blurred.
+        didSet { if openFolder == nil, folderPresentation.expanded { folderPresentation.expanded = false } }
+    }
+    /// The open folder's panel growing out of or shrinking into its icon (FolderMotion).
+    let folderPresentation = FolderPresentation()
+    private var folderGeneration = 0
     @Published private(set) var drag: DragState?
     @Published private(set) var mergeTarget: Entry?
     /// The keyboard selection (a slot on the showing page). Kept in `selectionState`, watched only by the highlights.
@@ -529,7 +535,7 @@ final class LaunchpadModel: ObservableObject {
             layout.compact()
             selected.removeAll()
         }
-        if let id { withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { openFolder = id } }
+        if let id { open(folder: id) }
         scheduleSave()
     }
 
@@ -572,7 +578,7 @@ final class LaunchpadModel: ObservableObject {
         case .app(let path): launch(path)
         case .folder(let id):
             selection = nil
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) { openFolder = id }
+            open(folder: id)
         }
     }
 
@@ -599,9 +605,37 @@ final class LaunchpadModel: ObservableObject {
         if openFolder != nil { closeFolder() } else { dismiss() }
     }
 
+    /// Shows the folder's panel at its icon, then grows it open (FolderMotion.open).
+    func open(folder id: UUID) {
+        folderGeneration += 1
+        folderPresentation.expanded = false
+        openFolder = id
+        DispatchQueue.main.async { [weak self] in
+            withAnimation(FolderMotion.open) { self?.folderPresentation.expanded = true }
+        }
+    }
+
+    /// Shrinks the panel back into its icon (FolderMotion.close); the folder counts as closed once it is there.
     func closeFolder() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { openFolder = nil }
+        guard openFolder != nil else { return }
+        folderGeneration += 1
+        let generation = folderGeneration
+        withAnimation(FolderMotion.close) {
+            folderPresentation.expanded = false
+        } completion: { [weak self] in
+            guard let self, self.folderGeneration == generation else { return }
+            self.openFolder = nil
+        }
         focus.token += 1
+    }
+
+    /// The open folder's icon in the grid (root coordinates), for the panel to grow out of; nil when it isn't on
+    /// the page showing.
+    func folderIconFrame(_ id: UUID) -> CGRect? {
+        guard !isSearching, layout.pages.indices.contains(currentPage),
+              let slot = layout.pages[currentPage].firstIndex(of: .folder(id)) else { return nil }
+        let c = metrics.iconCenter(slot), s = metrics.iconSize
+        return CGRect(x: c.x - s / 2, y: c.y - s / 2, width: s, height: s)
     }
 
     func showInFinder(_ path: String) {
@@ -1056,9 +1090,9 @@ final class LaunchpadModel: ObservableObject {
             drag = nil
             mergeTarget = nil
             if closeOpenFolder { openFolder = nil }
-            if let newFolder { openFolder = newFolder }
             currentPage = min(currentPage, max(0, l.pages.count - 1))
         }
+        if let newFolder { open(folder: newFolder) }
         focus.token += 1
         scheduleSave()
         if let records = pendingScan {

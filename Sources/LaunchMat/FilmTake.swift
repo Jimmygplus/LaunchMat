@@ -153,7 +153,7 @@ enum FilmTake {
         guard let id = model.openFolder else { fail("no folder opened after the drop") }
         let panel = model.folderPanel(for: id)
         let title = CGPoint(x: panel.frame.midX, y: panel.frame.minY + panel.header * 0.55)
-        click(title, textField: true)
+        click(title)
         // Off the name, so the pointer doesn't hide it.
         Pointer.glide(to: CGPoint(x: title.x + 80, y: title.y + 80), seconds: 0.35)
         wait(0.3)

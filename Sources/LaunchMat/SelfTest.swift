@@ -252,7 +252,9 @@ enum SelfTest {
             model.go(to: page)
             wait(0.6)
             model.activate(model.layout.pages[page][slot])
+            check("folder: opens at its icon, then grows open", model.openFolder == id && !model.folderPresentation.expanded)
             settle()
+            check("folder: open after the animation", model.folderPresentation.expanded)
             let panel = model.folderPanel(for: id)
             let title = CGPoint(x: panel.frame.midX, y: panel.frame.minY + panel.header * 0.55)
             let window = controller.window
@@ -261,12 +263,12 @@ enum SelfTest {
                                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                                    context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1)
             }
-            // A text field reads the release from the event queue while it tracks the press.
-            if let up = event(.leftMouseUp), let down = event(.leftMouseDown) {
-                NSApp.postEvent(up, atStart: false)
+            // The name is text until clicked; then it becomes a field with the keyboard.
+            if let down = event(.leftMouseDown), let up = event(.leftMouseUp) {
                 window.sendEvent(down)
+                window.sendEvent(up)
             }
-            wait(0.3)
+            settle()
             let editor = window.firstResponder as? NSTextView
             check("folder name: a click starts editing it", editor != nil)
             editor?.selectAll(nil)
@@ -281,7 +283,9 @@ enum SelfTest {
             check("folder name: Return keeps \"Listen\" and ends the editing (nothing left selected)",
                   model.layout.folders[id]?.name == "Listen" && !(after?.string == "Listen" && (after?.selectedRange().length ?? 0) > 0))
             model.closeFolder()
-            wait(0.5)
+            check("folder: closing keeps the panel until it is back in its icon", model.openFolder == id && !model.folderPresentation.expanded)
+            wait(1.0)
+            check("folder: closed once the panel is back in its icon", model.openFolder == nil)
         } else {
             print("SKIP  folder name: no folder in the layout")
         }
