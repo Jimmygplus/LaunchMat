@@ -40,6 +40,8 @@ enum SelfTest {
         }
         check("folder created with both apps", folder.apps == [y.appPath!, x.appPath!])
         check("new folder opens", model.openFolder == fid)
+        check("the target's cell becomes the folder (C8: no new cell fading in beside it)",
+              model.placedEntries.first { $0.entry == .folder(fid) }?.id == y.key)
 
         // 3. A quick pass over an icon (< 0.35 s) must not merge.
         let p = page0()[1], q = page0()[2]

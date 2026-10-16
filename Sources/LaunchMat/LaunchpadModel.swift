@@ -31,7 +31,9 @@ struct PlacedEntry: Identifiable {
     let entry: Entry
     let page: Int
     let slot: Int
-    var id: String { entry.key }
+    /// The cell's identity: the entry's key, or for a folder just made by dropping an app on another, the target
+    /// app's (spec C8): the target's cell becomes the folder where it stands instead of fading out next to a new one.
+    var id: String
 }
 
 /// See LaunchpadModel.focus.
@@ -139,10 +141,20 @@ final class LaunchpadModel: ObservableObject {
     }
 
     var placedEntries: [PlacedEntry] {
-        layout.pages.enumerated().flatMap { p, page in
-            page.enumerated().map { PlacedEntry(entry: $0.element, page: p, slot: $0.offset) }
+        let placed = layout.pages.enumerated().flatMap { p, page in
+            page.enumerated().map { PlacedEntry(entry: $0.element, page: p, slot: $0.offset, id: $0.element.key) }
+        }
+        guard !cellAlias.isEmpty else { return placed }
+        let keys = Set(placed.map(\.id))
+        return placed.map { item in
+            guard case .folder(let id) = item.entry, let alias = cellAlias[id], !keys.contains(alias) else { return item }
+            return PlacedEntry(entry: item.entry, page: item.page, slot: item.slot, id: alias)
         }
     }
+
+    /// Folders made by dropping an app on another, keyed to the target app's cell identity (see PlacedEntry.id).
+    /// Kept until the grid closes, where the switch back can't be seen.
+    private var cellAlias: [UUID: String] = [:]
 
     // MARK: - Loading
 
@@ -695,6 +707,7 @@ final class LaunchpadModel: ObservableObject {
             cancelPendingMerge()
             dragEnded()
         }
+        cellAlias.removeAll()
         query = ""
         openFolder = nil
         selection = nil
@@ -1069,6 +1082,7 @@ final class LaunchpadModel: ObservableObject {
         } else if d.sourceFolder == nil, let t = target, let path = d.entry.appPath {
             let id = l.merge(app: path, onto: t, newFolderName: suggestedFolderName(target: t, adding: path))
             if case .app = t, d.companions.isEmpty { newFolder = id }
+            if case .app = t, let id { cellAlias[id] = t.key }
             if let id {
                 // Multi-drag onto a folder target: apps join it, folders land right after it.
                 for c in d.companions {
