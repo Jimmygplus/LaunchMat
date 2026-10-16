@@ -168,15 +168,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Menus
 
-    /// The menu bar icon's menu: only opening the grid, settings, feedback, about and quit. Everything else lives in
-    /// the settings window or the main menu.
+    /// The menu bar icon: a click opens (or closes) the grid; a right-click or Control-click shows its menu (only
+    /// opening the grid, settings, feedback, about and quit; everything else lives in the settings window or the
+    /// main menu). Jimmy's call, whatever LaunchOS does.
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "square.grid.3x3.fill", accessibilityDescription: "LaunchMat")
-        let menu = NSMenu()
-        menu.identifier = NSUserInterfaceItemIdentifier("status")
-        menu.delegate = self
-        statusItem.menu = menu
+        statusMenu.identifier = NSUserInterfaceItemIdentifier("status")
+        statusMenu.delegate = self
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(statusItemClicked)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+    }
+
+    private let statusMenu = NSMenu()
+
+    @objc private func statusItemClicked() {
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+            // The menu belongs to the item only while it shows, so the next click opens the grid again.
+            statusItem.menu = statusMenu
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
+        } else {
+            controller.toggle()
+        }
     }
 
     /// The main menu, opened by a right-click on blank grid space or the ⋯ button next to the search field.
