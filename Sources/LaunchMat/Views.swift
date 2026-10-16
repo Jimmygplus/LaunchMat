@@ -406,7 +406,7 @@ struct EntryCell: View {
                             .allowsHitTesting(model.optionHeld)
                     }
                 }
-                .modifier(Jiggle(active: model.optionHeld))
+                .modifier(Jiggle(active: model.optionHeld, seed: entry.key.hashValue))
             // White, Body size, a soft shadow (black 0.26, blur 2, 1 pt down), as LaunchOS's names (spec, section 4).
             Text(model.title(for: entry))
                 .font(.body)
@@ -645,7 +645,7 @@ struct FolderAppCell: View {
                             .allowsHitTesting(model.optionHeld)
                     }
                 }
-                .modifier(Jiggle(active: model.optionHeld))
+                .modifier(Jiggle(active: model.optionHeld, seed: path.hashValue))
             Text(model.title(for: .app(path)))
                 .font(.body)
                 .foregroundStyle(.white)
@@ -721,15 +721,52 @@ struct CountBadge: View {
 }
 
 /// Launchpad-style wobble while Option is held.
+/// Wiggle mode as LaunchOS (spec 13.3): each icon rocks between ±θ about its centre, θ at random 1.38°–1.72°, each
+/// way in 0.105–0.125 s, and bobs 0.8–1.4 pt, each way in 0.12–0.145 s, starting 0–0.03 s late; all easing in and
+/// out, back and forth for as long as it lasts. The values are drawn per icon (from `seed`), so no two move together.
 struct Jiggle: ViewModifier {
     let active: Bool
-    @State private var phase = false
+    var seed: Int = 0
+    @State private var rock = false
+    @State private var bob = false
 
     func body(content: Content) -> some View {
+        var random = SplitMix(seed)
+        let angle = random.next(in: 1.38...1.72)
+        let swing = random.next(in: 0.105...0.125)
+        let lift = random.next(in: 0.8...1.4)
+        let bounce = random.next(in: 0.12...0.145)
+        let delay = random.next(in: 0...0.03)
         content
-            .rotationEffect(.degrees(active ? (phase ? 1.6 : -1.6) : 0))
-            .animation(active ? .easeInOut(duration: 0.13).repeatForever(autoreverses: true) : .default, value: phase)
-            .onChange(of: active) { _, on in phase = on }
-            .onAppear { if active { phase = true } }
+            .rotationEffect(.degrees(active ? (rock ? angle : -angle) : 0))
+            .animation(active ? .easeInOut(duration: swing).repeatForever(autoreverses: true).delay(delay) : .default, value: rock)
+            .offset(y: active && bob ? -lift : 0)
+            .animation(active ? .easeInOut(duration: bounce).repeatForever(autoreverses: true).delay(delay) : .default, value: bob)
+            .onChange(of: active) { _, on in
+                rock = on
+                bob = on
+            }
+            .onAppear {
+                if active {
+                    rock = true
+                    bob = true
+                }
+            }
+    }
+}
+
+/// A small, fast pseudo-random sequence from a seed (SplitMix64): the same numbers for the same seed.
+struct SplitMix {
+    private var state: UInt64
+
+    init(_ seed: Int) { state = UInt64(bitPattern: Int64(seed)) &+ 0x9E37_79B9_7F4A_7C15 }
+
+    mutating func next(in range: ClosedRange<Double>) -> Double {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        z ^= z >> 31
+        return range.lowerBound + Double(z >> 11) / Double(1 << 53) * (range.upperBound - range.lowerBound)
     }
 }
