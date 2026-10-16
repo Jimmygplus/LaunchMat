@@ -124,7 +124,10 @@ enum SelfTest {
         // 10. Uninstall eligibility: system apps never, App Store / third-party apps yes.
         let safari = model.apps.values.first { $0.bundleID == "com.apple.Safari" }
         let notes = model.apps.values.first { $0.bundleID == "com.apple.Notes" }
-        let thirdParty = model.apps.values.first { $0.id.hasPrefix("/Applications/") && !$0.isApple }
+        // Not LaunchMat itself, which is never offered for uninstalling (it may be installed in /Applications).
+        let thirdParty = model.apps.values.first {
+            $0.id.hasPrefix("/Applications/") && !$0.isApple && $0.bundleID != Bundle.main.bundleIdentifier
+        }
         check("Safari / Notes not uninstallable", safari.map(Uninstaller.canUninstall) == false && notes.map(Uninstaller.canUninstall) == false)
         check("third-party app uninstallable", thirdParty.map(Uninstaller.canUninstall) == true)
         if let tp = thirdParty {
