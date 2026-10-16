@@ -122,10 +122,14 @@ enum FilmTake {
         let gap = CGPoint(x: m.cellCenter(model.gridSize.cols / 2).x + m.cell.width / 2, y: row)
         let oneToOne = min(72, max(48, Double(m.size.width) * 0.08))
         let distance = CGFloat(max(Paging.threshold + 6, oneToOne - 4))
+        // The film shows page turns as a trackpad swipe: no pointer while the pages move.
+        Pointer.isHidden = true
         drag(from: gap, to: CGPoint(x: gap.x - distance, y: row), seconds: 0.4)
         wait(1.6)
         guard model.isBlank(at: gap) else { fail("the gap between icons isn't blank on page 2") }
         drag(from: gap, to: CGPoint(x: gap.x + distance, y: row), seconds: 0.4)
+        wait(1.0)
+        Pointer.isHidden = false
         wait(1.8)
     }
 
@@ -582,6 +586,17 @@ private enum Pointer {
     private static var screen: NSScreen?
     /// In grid coordinates (origin top left of the screen).
     private(set) static var at = CGPoint.zero
+
+    /// Hidden while the open take turns pages (shown as a trackpad swipe); it keeps following the events meanwhile.
+    static var isHidden: Bool {
+        get { layer.isHidden }
+        set {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.isHidden = newValue
+            CATransaction.commit()
+        }
+    }
 
     static func setUp(on screen: NSScreen, at start: CGPoint) {
         self.screen = screen
