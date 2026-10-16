@@ -276,6 +276,16 @@ struct MergePlate: View {
     }
 }
 
+/// A pressed icon darkens: black at 32% over the icon itself (spec 13.4: LaunchOS's Highlight colour; its shape
+/// there is only inferred, so the icon's own shape is used).
+struct PressShade<Icon: View>: View {
+    @ViewBuilder let icon: () -> Icon
+
+    var body: some View {
+        Color.black.opacity(0.32).mask(icon()).allowsHitTesting(false)
+    }
+}
+
 /// LaunchOS's one "pop" (spec 13.2), for the merge plate and the uninstall badge: in, scale 0.72 → 1 on a spring
 /// (mass 1, stiffness 520, damping 32) while fading in over 0.16 s ease-out; out, back to 0.72 (stiffness 420,
 /// damping 36) while fading out over 0.12 s ease-in.
@@ -375,6 +385,7 @@ struct EntryCell: View {
     let center: CGPoint
     let page: Int
     let slot: Int
+    @GestureState private var pressed = false
 
     var body: some View {
         let d = model.drag
@@ -389,6 +400,7 @@ struct EntryCell: View {
             // The merge target, and the folder it becomes, carry both icons so the change is a fade in place
             // that moves with the cell (C8); every other cell draws just its own.
             EntryIcon(model: model, entry: entry, size: metrics.iconSize, morphFrom: merging ? entry : model.morphSource(entry))
+                .overlay { if pressed { PressShade { EntryIcon(model: model, entry: entry, size: metrics.iconSize) } } }
                 .background(
                     RoundedRectangle(cornerRadius: metrics.iconSize * 0.28, style: .continuous)
                         .fill(.white.opacity(picked ? 0.22 : 0))
@@ -426,6 +438,7 @@ struct EntryCell: View {
         .contentShape(CenteredColumn(width: frame.width))
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named("root"))
+                .updating($pressed) { _, isPressed, _ in isPressed = true }
                 .onChanged { v in
                     guard model.drag != nil || IconPress.isDrag(v) else { return }
                     let icon = CGPoint(x: center.x, y: center.y - (metrics.contentHeight - metrics.iconSize) / 2)
@@ -630,6 +643,7 @@ struct FolderAppCell: View {
     let folderID: UUID
     let panel: FolderPanel
     let center: CGPoint
+    @GestureState private var pressed = false
 
     var body: some View {
         let dragged = model.drag?.entry == .app(path) && model.drag?.sourceFolder == folderID
@@ -638,6 +652,7 @@ struct FolderAppCell: View {
         let frame = IconPress.frame(center: center, iconSize: panel.iconSize, cellWidth: panel.cell.width * 0.94, height: height)
         VStack(spacing: 6) {
             AppIconImage(image: model.icons[path], size: panel.iconSize)
+                .overlay { if pressed { PressShade { AppIconImage(image: model.icons[path], size: panel.iconSize) } } }
                 .overlay(alignment: .topLeading) {
                     if model.canUninstall(path) {
                         UninstallBadge(size: panel.iconSize) { model.uninstall(path) }
@@ -657,6 +672,7 @@ struct FolderAppCell: View {
         .contentShape(CenteredColumn(width: frame.width))
         .gesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named("root"))
+                .updating($pressed) { _, isPressed, _ in isPressed = true }
                 .onChanged { v in
                     guard model.drag != nil || IconPress.isDrag(v) else { return }
                     let icon = CGPoint(x: center.x, y: center.y - (height - panel.iconSize) / 2)
