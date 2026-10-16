@@ -496,8 +496,11 @@ extension FilmTake {
         }
         model.load(fresh: true, sync: true)
         if let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode(PadLayout.self, from: data) {
+            // The file decides which apps are in the grid: what was taken out of it stays out.
+            let inFile = Set(saved.orderedApps).union(saved.folders.values.flatMap(\.apps))
+            model.appFilter = { inFile.contains($0.id) }
             model.layout = saved
-            model.refreshApps(sync: true) // drops what isn't installed here, adds what is new
+            model.refreshApps(sync: true) // drops what isn't installed here
             print("film-take: demo layout \(url.path)")
             return
         }
