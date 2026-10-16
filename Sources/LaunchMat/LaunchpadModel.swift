@@ -92,6 +92,8 @@ final class LaunchpadModel: ObservableObject {
     var metrics = GridMetrics(size: CGSize(width: 1440, height: 900), cols: 7, rows: 5)
     var dismissHandler: (() -> Void)?
     var persistenceEnabled = true
+    /// Which installed apps the grid shows; nil for all. Set only by --film-take's demo layout.
+    var appFilter: ((AppRecord) -> Bool)?
 
     private var searching = false
     private var pageBeforeSearch = 0
@@ -281,7 +283,8 @@ final class LaunchpadModel: ObservableObject {
         return context.makeImage()
     }
 
-    private func apply(_ records: [AppRecord]) {
+    private func apply(_ all: [AppRecord]) {
+        let records = appFilter.map { all.filter($0) } ?? all
         var dict: [String: AppRecord] = [:]
         for r in records { dict[r.id] = r }
         apps = dict
