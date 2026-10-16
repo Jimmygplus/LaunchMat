@@ -444,7 +444,8 @@ enum Snapshot {
 
         let host = NSHostingView(rootView: RootView(model: model))
         host.frame = NSRect(origin: .zero, size: size)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        // The grid's own window class, so its fields look as they do on screen (selection, caret).
+        let window = LaunchWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(1.5))

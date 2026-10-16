@@ -7,6 +7,19 @@ import SwiftUI
 final class LaunchWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    /// The grid's fields (search, a folder's name) are white text on a dark picture: when one takes the keyboard, its
+    /// editor shows selected text on a translucent white highlight instead of the system's light grey, and a white
+    /// caret. (SwiftUI's fields need their own editor class, so it is restyled, not replaced.)
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+        let made = super.makeFirstResponder(responder)
+        if let editor = firstResponder as? NSTextView, editor.isFieldEditor {
+            editor.selectedTextAttributes = [.backgroundColor: NSColor.white.withAlphaComponent(0.3),
+                                             .foregroundColor: NSColor.white]
+            editor.insertionPointColor = .white
+        }
+        return made
+    }
 }
 
 @MainActor
