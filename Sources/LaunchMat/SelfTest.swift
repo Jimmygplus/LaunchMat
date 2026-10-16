@@ -154,6 +154,20 @@ enum SelfTest {
         let visible = Set(model.apps.keys).subtracting(model.layout.hidden)
         check("no duplicates / nothing lost", Set(placed).count == placed.count && Set(placed) == visible)
 
+        // 16. No app in the grid draws a link's icon (the alias arrow): every icon comes from a real .app bundle,
+        //     and no app is shown twice through two links.
+        let placedApps = model.layout.orderedApps
+        let bundles = placedApps.compactMap { model.apps[$0]?.target }
+        let notBundles = bundles.filter { bundle in
+            let v = try? URL(fileURLWithPath: bundle).resourceValues(forKeys: [.isSymbolicLinkKey, .isAliasFileKey, .isDirectoryKey])
+            return v?.isSymbolicLink != false || v?.isAliasFile != false || v?.isDirectory != true || !bundle.hasSuffix(".app")
+        }
+        let links = model.apps.values.filter(\.isLink).map { "\($0.name) ← \(($0.id as NSString).lastPathComponent)" }.sorted()
+        print("      linked apps shown through their target: \(links)")
+        check("icons: every app's icon is drawn from its .app bundle, none from a link (\(notBundles.prefix(3)))",
+              notBundles.isEmpty && bundles.count == placedApps.count)
+        check("icons: no app shown twice through two links", Set(bundles).count == bundles.count)
+
         // 13. Screens change while the grid is open (spec 12).
         screenChanges(model: model)
 

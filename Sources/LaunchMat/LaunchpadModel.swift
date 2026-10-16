@@ -27,6 +27,12 @@ struct IconBatch: @unchecked Sendable {
     let images: [String: NSImage]
 }
 
+/// An entry and the app bundle its icon is drawn from.
+struct IconSource: Sendable {
+    let id: String
+    let bundle: String
+}
+
 struct PlacedEntry: Identifiable {
     let entry: Entry
     let page: Int
@@ -191,7 +197,7 @@ final class LaunchpadModel: ObservableObject {
     func refreshApps(sync: Bool = false) {
         if sync {
             apply(AppScanner.scan())
-            let missing = Array(apps.keys)
+            let missing = iconSources(Array(apps.keys))
             icons.merge(Self.loadIcons(missing, pixels: iconPixels)) { $1 }
             renderedIconPixels = iconPixels
             if persistenceEnabled { pruneIconCache() }
@@ -209,8 +215,13 @@ final class LaunchpadModel: ObservableObject {
         }
     }
 
-    /// Returns the paths that need a (new) icon. During a drag the result waits until the drop.
-    private func applyScan(_ records: [AppRecord]) -> [String] {
+    /// Each entry with the bundle its icon is drawn from (a linked app's target, never the link).
+    private func iconSources(_ paths: [String]) -> [IconSource] {
+        paths.map { IconSource(id: $0, bundle: apps[$0]?.target ?? $0) }
+    }
+
+    /// Returns the entries that need a (new) icon. During a drag the result waits until the drop.
+    private func applyScan(_ records: [AppRecord]) -> [IconSource] {
         if drag != nil {
             pendingScan = records
             return []
@@ -220,15 +231,16 @@ final class LaunchpadModel: ObservableObject {
     }
 
     /// Missing icons, plus apps whose bundle changed since its icon was loaded (updates).
-    private func iconsToLoad() -> [String] {
-        apps.keys.filter { path in
-            let modified = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate]) as? Date
+    private func iconsToLoad() -> [IconSource] {
+        iconSources(apps.keys.filter { path in
+            let bundle = apps[path]?.target ?? path
+            let modified = (try? FileManager.default.attributesOfItem(atPath: bundle)[.modificationDate]) as? Date
             if icons[path] == nil || iconStamps[path] != modified {
                 iconStamps[path] = modified
                 return true
             }
             return false
-        }
+        })
     }
 
     private func finishScan(_ batch: IconBatch) {
@@ -255,10 +267,10 @@ final class LaunchpadModel: ObservableObject {
         let pixels = iconPixels
         guard pixels != renderedIconPixels, !icons.isEmpty else { return }
         renderedIconPixels = pixels
-        let paths = Array(icons.keys)
+        let sources = iconSources(Array(icons.keys))
         let model = self
         Task.detached(priority: .utility) {
-            let batch = IconBatch(images: Self.loadIcons(paths, pixels: pixels))
+            let batch = IconBatch(images: Self.loadIcons(sources, pixels: pixels))
             await model.replaceIcons(batch)
         }
     }
@@ -271,22 +283,22 @@ final class LaunchpadModel: ObservableObject {
     /// Each icon is drawn once, off the main thread, into a bitmap exactly as large as it appears, so showing a page
     /// only copies pixels: nothing is rendered on demand when a page first scrolls into view.
     /// Bitmaps already drawn at this size come from the disk cache (IconCache).
-    nonisolated private static func loadIcons(_ paths: [String], pixels: Int) -> [String: NSImage] {
+    nonisolated private static func loadIcons(_ sources: [IconSource], pixels: Int) -> [String: NSImage] {
         var out: [String: NSImage] = [:]
-        for path in paths {
-            let key = IconCache.key(path: path, pixels: pixels)
+        for item in sources {
+            // Drawn from the app bundle itself: a link's own icon would carry the alias arrow.
+            let key = IconCache.key(path: item.bundle, pixels: pixels)
             if let cached = IconCache.load(key) {
-                out[path] = NSImage(cgImage: cached, size: NSSize(width: pixels, height: pixels))
+                out[item.id] = NSImage(cgImage: cached, size: NSSize(width: pixels, height: pixels))
                 continue
             }
-            // A linked app (/Applications/Safari.app points into the system's Cryptex) would get the link arrow.
-            let source = NSWorkspace.shared.icon(forFile: URL(fileURLWithPath: path).resolvingSymlinksInPath().path)
+            let source = NSWorkspace.shared.icon(forFile: item.bundle)
             if let bitmap = render(source, pixels: pixels) {
                 IconCache.store(bitmap, as: key)
-                out[path] = NSImage(cgImage: bitmap, size: NSSize(width: pixels, height: pixels))
+                out[item.id] = NSImage(cgImage: bitmap, size: NSSize(width: pixels, height: pixels))
             } else {
                 source.size = NSSize(width: 256, height: 256)
-                out[path] = source
+                out[item.id] = source
             }
         }
         return out
@@ -294,7 +306,7 @@ final class LaunchpadModel: ObservableObject {
 
     /// After a full load: drop cached icons of apps that are gone or changed, and of other sizes.
     private func pruneIconCache() {
-        let keep = Set(apps.keys.map { IconCache.key(path: $0, pixels: renderedIconPixels) })
+        let keep = Set(apps.values.map { IconCache.key(path: $0.target, pixels: renderedIconPixels) })
         Task.detached(priority: .background) { IconCache.prune(keeping: keep) }
     }
 
@@ -612,7 +624,7 @@ final class LaunchpadModel: ObservableObject {
     func launch(_ path: String) {
         if let launchHandler { return launchHandler(path) }
         guard isInstalled(path) else { return } // kept in place while missing (updating / reinstalling)
-        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: path),
+        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: apps[path]?.target ?? path),
                                            configuration: NSWorkspace.OpenConfiguration()) { _, error in
             if let error { NSLog("LaunchMat: could not open \(path): \(error.localizedDescription)") }
         }

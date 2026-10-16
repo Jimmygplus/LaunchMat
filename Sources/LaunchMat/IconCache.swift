@@ -14,8 +14,9 @@ enum IconCache {
     static func key(path: String, pixels: Int) -> String {
         let modified = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date)?
             .timeIntervalSince1970 ?? 0
-        // "2": linked apps' icons are now drawn from the link's target (no arrow); older entries miss.
-        let digest = SHA256.hash(data: Data("\(path)|\(modified)|\(pixels)|2".utf8))
+        // "3": icons are drawn from the app bundle itself (links and Finder aliases resolved), so any older entry,
+        // which may carry an alias arrow, misses and is drawn again.
+        let digest = SHA256.hash(data: Data("\(path)|\(modified)|\(pixels)|3".utf8))
         return digest.map { String(format: "%02x", $0) }.joined() + ".png"
     }
 

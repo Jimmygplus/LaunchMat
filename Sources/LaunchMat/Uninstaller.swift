@@ -5,9 +5,9 @@ import LaunchMatCore
 @MainActor
 enum Uninstaller {
     static func canUninstall(_ app: AppRecord) -> Bool {
-        // System apps (incl. Safari, a symlink into /System/Cryptexes) can't be removed; App Store apps can.
-        !URL(fileURLWithPath: app.id).resolvingSymlinksInPath().path.hasPrefix("/System/")
-            && app.bundleID != Bundle.main.bundleIdentifier
+        // System apps can't be removed; App Store apps can. Linked apps aren't offered: the app they lead to may be
+        // anywhere (another user's folder, a disk image).
+        !app.isLink && !app.target.hasPrefix("/System/") && app.bundleID != Bundle.main.bundleIdentifier
     }
 
     /// Leftovers by bundle ID / name, skipping any that another installed copy (e.g. a beta, or a second
