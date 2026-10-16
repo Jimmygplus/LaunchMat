@@ -252,7 +252,8 @@ final class LaunchpadModel: ObservableObject {
                 out[path] = NSImage(cgImage: cached, size: NSSize(width: pixels, height: pixels))
                 continue
             }
-            let source = NSWorkspace.shared.icon(forFile: path)
+            // A linked app (/Applications/Safari.app points into the system's Cryptex) would get the link arrow.
+            let source = NSWorkspace.shared.icon(forFile: URL(fileURLWithPath: path).resolvingSymlinksInPath().path)
             if let bitmap = render(source, pixels: pixels) {
                 IconCache.store(bitmap, as: key)
                 out[path] = NSImage(cgImage: bitmap, size: NSSize(width: pixels, height: pixels))
