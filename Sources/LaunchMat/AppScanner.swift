@@ -126,3 +126,44 @@ enum AppLinks {
         return nil
     }
 }
+
+/// Watches the app folders (AppScanner.roots) for apps installed, removed or updated (spec §14): FSEvents with a 1 s
+/// latency, then 1 s more of quiet before `changed` runs, so an install that writes for a while counts once.
+@MainActor
+final class AppWatcher {
+    private var stream: FSEventStreamRef?
+    private let changed: @MainActor () -> Void
+    private var quiet: DispatchWorkItem?
+
+    init(changed: @escaping @MainActor () -> Void) {
+        self.changed = changed
+        var context = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
+                                           retain: nil, release: nil, copyDescription: nil)
+        let paths = AppScanner.roots.filter { FileManager.default.fileExists(atPath: $0) } as CFArray
+        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+            guard let info else { return }
+            let watcher = Unmanaged<AppWatcher>.fromOpaque(info).takeUnretainedValue()
+            MainActor.assumeIsolated { watcher.fired() } // delivered on the main queue
+        }
+        stream = FSEventStreamCreate(nil, callback, &context, paths, FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 1.0,
+                                     FSEventStreamCreateFlags(kFSEventStreamCreateFlagNone))
+        if let stream {
+            FSEventStreamSetDispatchQueue(stream, .main)
+            FSEventStreamStart(stream)
+        }
+    }
+
+    isolated deinit {
+        guard let stream else { return }
+        FSEventStreamStop(stream)
+        FSEventStreamInvalidate(stream)
+        FSEventStreamRelease(stream)
+    }
+
+    private func fired() {
+        quiet?.cancel()
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.changed() } }
+        quiet = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+}

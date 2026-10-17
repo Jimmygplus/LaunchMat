@@ -32,6 +32,8 @@ struct IconBatch: @unchecked Sendable {
 struct IconSource: Sendable {
     let id: String
     let bundle: String
+    /// Decoded as it loads, rather than when first drawn (within the memory budget, see iconPlan).
+    var decodeNow = true
 }
 
 struct PlacedEntry: Identifiable {
@@ -146,8 +148,18 @@ final class LaunchpadModel: ObservableObject {
     private var lastWheelFlip: TimeInterval = -.infinity
     private var pageSettlingUntil = Date.distantPast
     private var scanning = false
+    /// Apps changed while a scan ran, or while the grid was in use: scan again when it's done, or when the grid closes.
+    private var rescanPending = false
     private var pendingScan: [AppRecord]?
     private var iconStamps: [String: Date?] = [:]
+    /// True while the grid is on screen: app changes wait until it closes (spec §14).
+    private(set) var inUse = false
+    /// The icons of the first two pages are in (spec §14: they are loaded first).
+    private(set) var firstIconsReady = false
+    /// Called when the apps have been scanned, when the first two pages' icons are in, and when all icons are in
+    /// (spec §14: the window controller prepares the grid in between).
+    var loadProgress: ((LoadStep) -> Void)?
+    enum LoadStep { case scanned, firstIcons, allIcons }
 
     /// Overdamped: the page glides to rest without bouncing, settling in about 0.7 s.
     private static let pageSpring = Animation.interpolatingSpring(mass: 0.02, stiffness: 4, damping: 1)
@@ -210,40 +222,103 @@ final class LaunchpadModel: ObservableObject {
         refreshApps(sync: sync)
     }
 
-    func refreshApps(sync: Bool = false) {
+    /// Scans the apps and loads their icons (spec §14): in the background, the first two pages' icons first, decoded
+    /// there (never on the main thread), published as each batch is done; the rest after them, 48 at a time, at a low
+    /// priority. Launched as the Mac starts up (a login item), all of it runs at a low priority, so the login isn't
+    /// slowed. A request during a scan scans again when it's done.
+    func refreshApps(sync: Bool = false, quietly: Bool = false) {
         if sync {
             apply(AppScanner.scan())
-            let missing = iconSources(Array(apps.keys))
-            icons.merge(Self.loadIcons(missing, pixels: iconPixels)) { $1 }
+            let plan = iconPlan(iconSources(Array(apps.keys)), pixels: iconPixels)
+            for batch in plan { icons.merge(Self.loadIcons(batch, pixels: iconPixels, style: iconStyle)) { $1 } }
             renderedIconPixels = iconPixels
+            firstIconsReady = true
             if persistenceEnabled { pruneIconCache() }
             return
         }
-        guard !scanning else { return }
+        guard !scanning else {
+            rescanPending = true
+            return
+        }
         scanning = true
         let model = self
-        let pixels = iconPixels
-        Task.detached(priority: .userInitiated) {
+        let pixels = iconPixels, style = iconStyle
+        let quiet = quietly || Self.launchedAtLogin
+        Task.detached(priority: quiet ? .utility : .userInitiated) {
             let records = AppScanner.scan()
-            let missing = await model.applyScan(records)
-            let loaded = IconBatch(images: missing.isEmpty ? [:] : Self.loadIcons(missing, pixels: pixels))
-            await model.finishScan(loaded)
+            let plan = await model.applyScan(records, pixels: pixels)
+            guard let first = plan.first else { return await model.finishScan() }
+            await model.addIcons(IconBatch(images: Self.loadIcons(first, pixels: pixels, style: style)))
+            Task.detached(priority: .utility) {
+                for batch in plan.dropFirst() {
+                    await model.addIcons(IconBatch(images: Self.loadIcons(batch, pixels: pixels, style: style)))
+                }
+                await model.finishScan()
+            }
         }
     }
+
+    /// Started within three minutes of the Mac starting up: as a login item.
+    nonisolated static let launchedAtLogin = ProcessInfo.processInfo.systemUptime < 180
+
+    /// The icons to load, in batches: the first two pages' apps (folders' apps included), then the rest in grid order,
+    /// 48 at a time. Within a budget of 160 icons and 40 MB (spec §14) they are decoded as they load; past it they are
+    /// decoded when first drawn.
+    private func iconPlan(_ sources: [IconSource], pixels: Int) -> [[IconSource]] {
+        var rank: [String: Int] = [:]
+        var firstPages = Set<String>()
+        var i = 0
+        for (p, page) in layout.pages.enumerated() {
+            for entry in page {
+                let paths: [String] = switch entry {
+                case .app(let path): [path]
+                case .folder(let id): layout.folders[id]?.apps ?? []
+                }
+                for path in paths where rank[path] == nil {
+                    rank[path] = i
+                    i += 1
+                    if p < 2 { firstPages.insert(path) }
+                }
+            }
+        }
+        var ordered = sources.sorted { (rank[$0.id] ?? .max, $0.id) < (rank[$1.id] ?? .max, $1.id) }
+        let bytes = pixels * pixels * 4
+        for k in ordered.indices {
+            ordered[k].decodeNow = k < Self.decodedIconLimit && (k + 1) * bytes <= Self.decodedIconBytes
+        }
+        let first = ordered.filter { firstPages.contains($0.id) }
+        let rest = ordered.filter { !firstPages.contains($0.id) }
+        var plan = first.isEmpty ? [] : [first]
+        plan += stride(from: 0, to: rest.count, by: 48).map { Array(rest[$0..<min($0 + 48, rest.count)]) }
+        return plan
+    }
+
+    /// The decoded icons kept in memory (spec §14): at most 160, at most 40 MB.
+    static let decodedIconLimit = 160
+    static let decodedIconBytes = 40 * 1024 * 1024
 
     /// Each entry with the bundle its icon is drawn from (a linked app's target, never the link).
     private func iconSources(_ paths: [String]) -> [IconSource] {
         paths.map { IconSource(id: $0, bundle: apps[$0]?.target ?? $0) }
     }
 
-    /// Returns the entries that need a (new) icon. During a drag the result waits until the drop.
-    private func applyScan(_ records: [AppRecord]) -> [IconSource] {
+    /// Returns the entries that need a (new) icon, in batches (iconPlan). During a drag the result waits until the drop.
+    private func applyScan(_ records: [AppRecord], pixels: Int) -> [[IconSource]] {
         if drag != nil {
             pendingScan = records
             return []
         }
         apply(records)
-        return iconsToLoad()
+        loadProgress?(.scanned)
+        return iconPlan(iconsToLoad(), pixels: pixels)
+    }
+
+    private func addIcons(_ batch: IconBatch) {
+        if !batch.images.isEmpty { icons.merge(batch.images) { $1 } }
+        if !firstIconsReady {
+            firstIconsReady = true
+            loadProgress?(.firstIcons)
+        }
     }
 
     /// Missing icons, plus apps whose bundle changed since its icon was loaded (updates).
@@ -259,59 +334,103 @@ final class LaunchpadModel: ObservableObject {
         })
     }
 
-    private func finishScan(_ batch: IconBatch) {
-        if !batch.images.isEmpty { icons.merge(batch.images) { $1 } }
+    private func finishScan() {
         if renderedIconPixels == 0 {
             renderedIconPixels = iconPixels
             pruneIconCache()
         }
         scanning = false
+        if !firstIconsReady {
+            firstIconsReady = true
+            loadProgress?(.firstIcons)
+        }
+        loadProgress?(.allIcons)
+        if rescanPending, !inUse {
+            rescanPending = false
+            refreshApps(quietly: true)
+        }
+    }
+
+    /// The installed apps changed (AppWatcher): scanned again now, or when the grid closes if it is in use (spec §14).
+    func appsChanged() {
+        if inUse || scanning {
+            rescanPending = true
+        } else {
+            refreshApps(quietly: true)
+        }
     }
 
     /// The icon bitmaps' side in pixels: the grid's icon size (the dragged icon is drawn 10% larger) times the main
-    /// screen's scale, at most 512.
+    /// screen's scale, at most 256 (spec §14).
     private var iconPixels: Int {
         let screen = NSScreen.main
         let size = screen?.frame.size ?? CGSize(width: 1440, height: 900)
         let points = GridMetrics(size: size, cols: gridSize.cols, rows: gridSize.rows).iconSize * 1.1
-        return min(512, Int((points * (screen?.backingScaleFactor ?? 2)).rounded(.up)))
+        return min(256, Int((points * (screen?.backingScaleFactor ?? 2)).rounded(.up)))
     }
+
+    /// The system's appearance, light or dark, which some icons follow (macOS 26): part of the icon cache's key.
+    private var iconStyle: String {
+        NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? "dark" : "light"
+    }
+    private var renderedIconStyle: String?
     private var renderedIconPixels = 0
 
     /// Redraws every icon in the background when the size they appear at has changed (grid size, screens).
+    /// Also when the system's appearance changes (iconStyle).
     func refreshIconSize() {
-        let pixels = iconPixels
-        guard pixels != renderedIconPixels, !icons.isEmpty else { return }
+        let pixels = iconPixels, style = iconStyle
+        guard pixels != renderedIconPixels || style != (renderedIconStyle ?? style), !icons.isEmpty else {
+            renderedIconStyle = style
+            return
+        }
         renderedIconPixels = pixels
-        let sources = iconSources(Array(icons.keys))
+        renderedIconStyle = style
+        let plan = iconPlan(iconSources(Array(icons.keys)), pixels: pixels)
         let model = self
         Task.detached(priority: .utility) {
-            let batch = IconBatch(images: Self.loadIcons(sources, pixels: pixels))
-            await model.replaceIcons(batch)
+            for batch in plan {
+                await model.replaceIcons(IconBatch(images: Self.loadIcons(batch, pixels: pixels, style: style)))
+            }
+            await model.pruneIconCacheLater()
         }
     }
 
     private func replaceIcons(_ batch: IconBatch) {
         icons.merge(batch.images) { $1 }
-        pruneIconCache()
     }
+
+    private func pruneIconCacheLater() { pruneIconCache() }
 
     /// Each icon is drawn once, off the main thread, into a bitmap exactly as large as it appears, so showing a page
     /// only copies pixels: nothing is rendered on demand when a page first scrolls into view.
-    /// Bitmaps already drawn at this size come from the disk cache (IconCache).
-    nonisolated private static func loadIcons(_ sources: [IconSource], pixels: Int) -> [String: NSImage] {
+    /// Bitmaps already drawn at this size come from the disk cache (IconCache), four at a time, decoded here as they
+    /// are read (within the budget, IconSource.decodeNow). Icons not in the cache are drawn one after another.
+    nonisolated private static func loadIcons(_ sources: [IconSource], pixels: Int, style: String) -> [String: NSImage] {
+        let size = NSSize(width: pixels, height: pixels)
+        let keys = sources.map { IconCache.key(path: $0.bundle, pixels: pixels, style: style) }
+        let found = UnsafeMutableBufferPointer<CGImage?>.allocate(capacity: sources.count)
+        found.initialize(repeating: nil)
+        defer { found.deallocate() }
+        let lanes = min(4, sources.count)
+        if lanes > 0 {
+            DispatchQueue.concurrentPerform(iterations: lanes) { lane in
+                for k in stride(from: lane, to: sources.count, by: lanes) {
+                    found[k] = IconCache.load(keys[k], decode: sources[k].decodeNow)
+                }
+            }
+        }
         var out: [String: NSImage] = [:]
-        for item in sources {
-            // Drawn from the app bundle itself: a link's own icon would carry the alias arrow.
-            let key = IconCache.key(path: item.bundle, pixels: pixels)
-            if let cached = IconCache.load(key) {
-                out[item.id] = NSImage(cgImage: cached, size: NSSize(width: pixels, height: pixels))
+        for (k, item) in sources.enumerated() {
+            if let cached = found[k] {
+                out[item.id] = NSImage(cgImage: cached, size: size)
                 continue
             }
+            // Drawn from the app bundle itself: a link's own icon would carry the alias arrow.
             let source = NSWorkspace.shared.icon(forFile: item.bundle)
-            if let bitmap = render(source, pixels: pixels) {
-                IconCache.store(bitmap, as: key)
-                out[item.id] = NSImage(cgImage: bitmap, size: NSSize(width: pixels, height: pixels))
+            if let bitmap = render(source, pixels: pixels, style: style) {
+                IconCache.store(bitmap, as: keys[k])
+                out[item.id] = NSImage(cgImage: bitmap, size: size)
             } else {
                 source.size = NSSize(width: 256, height: 256)
                 out[item.id] = source
@@ -322,11 +441,12 @@ final class LaunchpadModel: ObservableObject {
 
     /// After a full load: drop cached icons of apps that are gone or changed, and of other sizes.
     private func pruneIconCache() {
-        let keep = Set(apps.values.map { IconCache.key(path: $0.target, pixels: renderedIconPixels) })
+        let style = renderedIconStyle ?? iconStyle
+        let keep = Set(apps.values.map { IconCache.key(path: $0.target, pixels: renderedIconPixels, style: style) })
         Task.detached(priority: .background) { IconCache.prune(keeping: keep) }
     }
 
-    nonisolated private static func render(_ image: NSImage, pixels: Int) -> CGImage? {
+    nonisolated private static func render(_ image: NSImage, pixels: Int, style: String) -> CGImage? {
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0, space: space,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
@@ -334,7 +454,9 @@ final class LaunchpadModel: ObservableObject {
         context.interpolationQuality = .high
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-        image.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        NSAppearance(named: style == "dark" ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
+            image.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+        }
         NSGraphicsContext.restoreGraphicsState()
         return context.makeImage()
     }
@@ -714,6 +836,7 @@ final class LaunchpadModel: ObservableObject {
     }
 
     func willShow(on screen: NSScreen?) {
+        inUse = true
         // Only the prepared image; if it isn't ready (a new desktop picture), it fades in when it is.
         if let screen, let image = Wallpaper.cached(for: screen), image !== wallpaper { wallpaper = image }
         prepareWallpapers()
@@ -730,10 +853,9 @@ final class LaunchpadModel: ObservableObject {
         }
     }
 
-    /// After the opening animation: catch up with apps installed or removed meanwhile. Nothing in the grid changes
-    /// while it animates.
+    /// After the opening animation. Apps installed or removed are caught by AppWatcher, not here: nothing in the grid
+    /// changes while it is in use (spec §14).
     func didShow() {
-        refreshApps()
         if whatsNew == nil, let card = WhatsNew.due {
             withAnimation(.easeOut(duration: 0.25)) { whatsNew = card }
         }
@@ -753,6 +875,11 @@ final class LaunchpadModel: ObservableObject {
         optionHeld = false
         pager.x = 0
         saveNow()
+        inUse = false
+        if rescanPending, !scanning {
+            rescanPending = false
+            refreshApps(quietly: true)
+        }
     }
 
     // MARK: - Paging
@@ -1152,8 +1279,12 @@ final class LaunchpadModel: ObservableObject {
         if let records = pendingScan {
             pendingScan = nil
             apply(records)
-            let missing = iconsToLoad()
-            if !missing.isEmpty { icons.merge(Self.loadIcons(missing, pixels: iconPixels)) { $1 } }
+            let plan = iconPlan(iconsToLoad(), pixels: iconPixels)
+            let model = self
+            let pixels = iconPixels, style = iconStyle
+            Task.detached(priority: .userInitiated) {
+                for batch in plan { await model.addIcons(IconBatch(images: Self.loadIcons(batch, pixels: pixels, style: style))) }
+            }
         }
     }
 

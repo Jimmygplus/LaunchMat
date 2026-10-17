@@ -102,6 +102,11 @@ final class LaunchWindowController: NSObject {
                 self?.model.refreshIconSize()
             }
         }
+        // Some icons follow the system's appearance (macOS 26): they are drawn again when it changes.
+        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("AppleInterfaceThemeChangedNotification"),
+                                                            object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.model.refreshIconSize() }
+        }
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification,
                                                object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.hide() }
@@ -154,15 +159,74 @@ final class LaunchWindowController: NSObject {
         } as Any)
     }
 
-    /// What the app does at launch before the grid is first shown: reads the layout, scans the apps and loads their
-    /// icons in the background, prepares the wallpapers and builds the window (`configure` adjusts it first). The
-    /// frame bench's cold start runs the same.
+    /// What the app does at launch before the grid is first shown: builds the window (`configure` adjusts it first),
+    /// reads the layout, scans the apps and loads their icons in the background, and prepares the wallpapers. As they
+    /// come in the grid is made ready, out of sight (warmUp). The frame bench's cold start runs the same.
     static func launch(model: LaunchpadModel, configure: (LaunchWindowController) -> Void = { _ in }) -> LaunchWindowController {
-        model.load()
-        model.prepareWallpapers()
         let controller = LaunchWindowController(model: model)
         configure(controller)
+        model.loadProgress = { [weak controller] step in controller?.loaded(step) }
+        model.load()
+        model.prepareWallpapers()
+        controller.watcher = AppWatcher { [weak model] in model?.appsChanged() }
         return controller
+    }
+
+    /// App folders watched for apps installed, removed or updated.
+    private var watcher: AppWatcher?
+    /// An open asked for at launch, waiting for the first two pages' icons.
+    private var openWhenReady = false
+
+    /// Spec §14: once the apps are scanned, and again as their icons come in, the grid is laid out and drawn once out of
+    /// sight; an open asked for at launch happens when the first two pages' icons are in.
+    private func loaded(_ step: LaunchpadModel.LoadStep) {
+        if step != .scanned, openWhenReady {
+            openWhenReady = false
+            warmUp()
+            show(on: openOn)
+            return
+        }
+        warmUp()
+    }
+
+    /// Opens at launch: at once if the first two pages' icons are in, otherwise when they are (at most 0.6 s), so they
+    /// don't appear one by one in the open grid.
+    func showWhenReady(on preferred: NSScreen? = nil) {
+        guard !model.firstIconsReady else { return show(on: preferred) }
+        openWhenReady = true
+        openOn = preferred
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self, self.openWhenReady else { return }
+            self.openWhenReady = false
+            self.show(on: self.openOn)
+        }
+    }
+    private weak var openOn: NSScreen?
+
+    /// Spec §14: the grid laid out, its names and folder icons drawn, its layers and pictures handed to the window
+    /// server, in the window ordered in at alpha 0 for a moment (not shown, no clicks), so the next open only shows it.
+    func warmUp() {
+        guard !isVisible, NSApp.modalWindow == nil, let display = pickDisplay() else { return }
+        // Still closing (it fades out over 0.24 s): once it's gone.
+        if window.isVisible {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.warmUp() }
+            return
+        }
+        if window.frame != display.frame { window.setFrame(display.frame, display: false) }
+        if let screen = display.screen, let image = Wallpaper.cached(for: screen), image !== model.wallpaper {
+            model.wallpaper = image
+        }
+        window.contentView?.layoutSubtreeIfNeeded()
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        window.orderFrontRegardless()
+        window.displayIfNeeded()
+        CATransaction.flush()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.window.ignoresMouseEvents = false
+            if !self.isVisible { self.window.orderOut(nil) }
+        }
     }
 
     func toggle() { isVisible ? hide() : show() }
@@ -181,6 +245,7 @@ final class LaunchWindowController: NSObject {
         model.screenShown = display.screen
         model.willShow(on: display.screen)
         window.alphaValue = 1
+        window.ignoresMouseEvents = false
         window.makeKeyAndOrderFront(nil)
         if activatesApp { NSApp.activate() }
         animate(open: true) { [weak self] in

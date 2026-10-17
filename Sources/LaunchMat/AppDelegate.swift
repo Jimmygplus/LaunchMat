@@ -61,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if freshInstall && !args.contains("--background") {
             showGuide()
         } else if !args.contains("--background") {
-            controller.show()
+            controller.showWhenReady()
         }
         DispatchQueue.main.async { [weak self] in self?.offerToRemoveOldApp() }
     }

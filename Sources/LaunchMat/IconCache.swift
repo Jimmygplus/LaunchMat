@@ -11,18 +11,21 @@ enum IconCache {
     static let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("LaunchMat/Icons", isDirectory: true)
 
-    static func key(path: String, pixels: Int) -> String {
+    /// `style` is the system's appearance (light or dark), which some icons follow.
+    static func key(path: String, pixels: Int, style: String) -> String {
         let modified = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date)?
             .timeIntervalSince1970 ?? 0
-        // "3": icons are drawn from the app bundle itself (links and Finder aliases resolved), so any older entry,
-        // which may carry an alias arrow, misses and is drawn again.
-        let digest = SHA256.hash(data: Data("\(path)|\(modified)|\(pixels)|3".utf8))
+        // "4": icons are drawn from the app bundle itself (links and Finder aliases resolved), in the system's
+        // appearance; any older entry misses and is drawn again.
+        let digest = SHA256.hash(data: Data("\(path)|\(modified)|\(pixels)|\(style)|4".utf8))
         return digest.map { String(format: "%02x", $0) }.joined() + ".png"
     }
 
-    static func load(_ key: String) -> CGImage? {
+    /// With `decode`, the picture is decoded here, as it is read: otherwise that happens when it is first drawn, on the
+    /// main thread.
+    static func load(_ key: String, decode: Bool) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(directory.appendingPathComponent(key) as CFURL, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+        return CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: decode] as CFDictionary)
     }
 
     static func store(_ image: CGImage, as key: String) {

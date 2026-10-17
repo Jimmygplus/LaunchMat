@@ -276,20 +276,30 @@ enum FrameBench {
         RunLoop.main.add(watch, forMode: .common)
         if later { wait(3.0) }
         let firstPage = model.layout.pages.first ?? []
-        let ready = firstPage.filter { entry in
-            switch entry {
-            case .app(let path): model.icons[path] != nil
-            case .folder(let id): (model.layout.folders[id]?.apps ?? []).allSatisfy { model.icons[$0] != nil }
-            }
-        }.count
-        let shown = CACurrentMediaTime()
-        controller.show(on: screen)
+        func ready() -> Int {
+            firstPage.filter { entry in
+                switch entry {
+                case .app(let path): model.icons[path] != nil
+                case .folder(let id): (model.layout.folders[id]?.apps ?? []).allSatisfy { model.icons[$0] != nil }
+                }
+            }.count
+        }
+        var shown = CACurrentMediaTime()
+        if later {
+            controller.show(on: screen)
+        } else {
+            // As the app does at launch: it opens once the first two pages' icons are in (at most 0.6 s).
+            controller.showWhenReady(on: screen)
+            while !controller.isVisible, CACurrentMediaTime() - shown < 2 { wait(0.002) }
+            shown = CACurrentMediaTime()
+        }
+        let readyAtOpen = ready()
         wait(0.5)
         FrameLog.shared.begin("afteropen", seconds: 1.5)
         wait(1.7)
         watch.invalidate()
         print("fps \(later ? "coldlater" : "cold"): apps scanned at \(ms(scanned)), first icons at \(ms(firstIcons)), all icons at "
-              + "\(ms(allIcons)) (\(model.icons.count) of \(model.apps.count)); opened at \(ms(shown)) with \(ready) of "
+              + "\(ms(allIcons)) (\(model.icons.count) of \(model.apps.count)); opened at \(ms(shown)) with \(readyAtOpen) of "
               + "\(firstPage.count) first-page icons ready")
         controller.hide()
         wait(0.6)
