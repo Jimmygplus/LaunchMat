@@ -122,7 +122,8 @@ final class FrameLog: NSObject {
 /// ⌥, and opens and closes a folder, all through the real event handlers, logging each with FrameLog; then prints
 /// medians and quits. Reads the saved layout but never writes it.
 ///
-/// - `--scenes open,page,drag,dragpage,jiggle,jdrag,folder`: only these (default all).
+/// - `--scenes open,page,drag,dragpage,jiggle,jdrag,folder`: only these (default all). `cold` or `coldlater` instead:
+///   the first open after launch, alone (see coldStart).
 /// - `--runs N`: each drag, wiggle and folder scene N times (default 3).
 /// - `--bench-screen N`: on `NSScreen.screens[N]` instead of the screen Settings picks.
 /// - `--offscreen`: on a made-up screen far from the real ones, so nothing is seen and the app isn't activated. No
@@ -138,6 +139,10 @@ enum FrameBench {
         let scenes = Set((value("--scenes") ?? "open,page,drag,dragpage,jiggle,jdrag,folder").split(separator: ",").map(String.init))
         let runs = max(1, Int(value("--runs") ?? "") ?? 3)
         let offscreen = args.contains("--offscreen")
+        let screenIndex = value("--bench-screen").flatMap(Int.init).flatMap { NSScreen.screens.indices.contains($0) ? $0 : nil }
+        if scenes.contains("cold") || scenes.contains("coldlater") {
+            coldStart(model, later: scenes.contains("coldlater"), offscreen: offscreen, screen: screenIndex.map { NSScreen.screens[$0] })
+        }
 
         model.persistenceEnabled = false
         let loadStart = CACurrentMediaTime()
@@ -154,7 +159,7 @@ enum FrameBench {
             controller.showOn = { .cursor }
             controller.activatesApp = false
             print("fps bench: off screen (1600 × 900), main thread and cell counts only")
-        } else if let n = value("--bench-screen").flatMap(Int.init), NSScreen.screens.indices.contains(n) {
+        } else if let n = screenIndex {
             screen = NSScreen.screens[n]
         }
         // Started from a script the app may stay inactive (off screen it always does), and then the window's first click
@@ -235,6 +240,59 @@ enum FrameBench {
                          median(runs.map { Double($0.busyOver120) }), median(runs.map { Double($0.busyOver60) }),
                          median(runs.map { Double($0.cells) })))
         }
+        exit(0)
+    }
+
+    // MARK: - Cold start
+
+    /// The first open after the app starts, as at launch (LaunchWindowController.launch): the grid opens at once
+    /// (`cold`, as when the app is opened) or 3 s later (`coldlater`, as with the hotkey after a login). Prints when the
+    /// apps were scanned and their icons loaded, how many of the first page's icons were there when the grid opened, and
+    /// the opening and the 1.5 s after it. Each needs a fresh process, so it runs alone and quits.
+    private static func coldStart(_ model: LaunchpadModel, later: Bool, offscreen: Bool, screen: NSScreen?) -> Never {
+        let launched = CACurrentMediaTime()
+        func ms(_ t: CFTimeInterval?) -> String { t.map { String(format: "%.0f ms", ($0 - launched) * 1000) } ?? "not yet" }
+        func wait(_ s: Double) { RunLoop.main.run(until: Date().addingTimeInterval(s)) }
+        model.persistenceEnabled = false
+        FrameLog.shared.enabled = true
+        let controller = LaunchWindowController.launch(model: model) { c in
+            guard offscreen else { return }
+            let frame = CGRect(x: 40_000, y: 40_000, width: 1600, height: 900)
+            c.displays = { [.init(id: 1, frame: frame, visibleFrame: frame)] }
+            c.activeDisplay = { 1 }
+            c.pointer = { CGPoint(x: frame.midX, y: frame.midY) }
+            c.showOn = { .cursor }
+            c.activatesApp = false
+        }
+        var scanned: CFTimeInterval?, firstIcons: CFTimeInterval?, allIcons: CFTimeInterval?
+        let watch = Timer(timeInterval: 0.002, repeats: true) { _ in
+            MainActor.assumeIsolated {
+                let now = CACurrentMediaTime()
+                if scanned == nil, !model.apps.isEmpty { scanned = now }
+                if firstIcons == nil, !model.icons.isEmpty { firstIcons = now }
+                if allIcons == nil, !model.apps.isEmpty, model.icons.count >= model.apps.count { allIcons = now }
+            }
+        }
+        RunLoop.main.add(watch, forMode: .common)
+        if later { wait(3.0) }
+        let firstPage = model.layout.pages.first ?? []
+        let ready = firstPage.filter { entry in
+            switch entry {
+            case .app(let path): model.icons[path] != nil
+            case .folder(let id): (model.layout.folders[id]?.apps ?? []).allSatisfy { model.icons[$0] != nil }
+            }
+        }.count
+        let shown = CACurrentMediaTime()
+        controller.show(on: screen)
+        wait(0.5)
+        FrameLog.shared.begin("afteropen", seconds: 1.5)
+        wait(1.7)
+        watch.invalidate()
+        print("fps \(later ? "coldlater" : "cold"): apps scanned at \(ms(scanned)), first icons at \(ms(firstIcons)), all icons at "
+              + "\(ms(allIcons)) (\(model.icons.count) of \(model.apps.count)); opened at \(ms(shown)) with \(ready) of "
+              + "\(firstPage.count) first-page icons ready")
+        controller.hide()
+        wait(0.6)
         exit(0)
     }
 

@@ -66,6 +66,9 @@ back, the others making room), `dragpage` (an icon held at the right edge until 
 reads the saved layout and never writes it.
 - **Per run:** display frames, the longest gap and the frames over 1.5 refresh intervals ("dropped"); the main thread's
   longest busy stretch and how many were over 8.3 ms (a 120 Hz frame) and 16.7 ms (60 Hz); icon cells drawn again.
+- **Cold start:** `--scenes cold` opens the grid at once after launch, `--scenes coldlater` 3 s later; each runs alone in
+  a fresh process and prints when the apps were scanned and their icons loaded, and how many of the first page's icons
+  were there when the grid opened.
 - **Options:** `--scenes drag,jiggle` (some only), `--runs N` (default 3), `--bench-screen N` (`NSScreen.screens[N]`),
   `--offscreen` (a made-up screen far from the real ones: nothing is seen, the app isn't activated, and only the main
   thread and cell counts mean anything).

@@ -154,6 +154,17 @@ final class LaunchWindowController: NSObject {
         } as Any)
     }
 
+    /// What the app does at launch before the grid is first shown: reads the layout, scans the apps and loads their
+    /// icons in the background, prepares the wallpapers and builds the window (`configure` adjusts it first). The
+    /// frame bench's cold start runs the same.
+    static func launch(model: LaunchpadModel, configure: (LaunchWindowController) -> Void = { _ in }) -> LaunchWindowController {
+        model.load()
+        model.prepareWallpapers()
+        let controller = LaunchWindowController(model: model)
+        configure(controller)
+        return controller
+    }
+
     func toggle() { isVisible ? hide() : show() }
 
     /// Opens on the screen Settings › Show on picks, worked out now, or on `preferred` (the film's takes).

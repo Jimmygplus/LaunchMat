@@ -48,9 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // New users meet the guide; the "What's New" card is for people upgrading.
         if freshInstall { WhatsNew.markSeen() }
         model.openReleaseNotes = { [weak self] in self?.openURL(Links.releaseNotes) }
-        model.load()
-        model.prepareWallpapers()
-        controller = LaunchWindowController(model: model)
+        controller = LaunchWindowController.launch(model: model)
         controller.mainMenu = { [weak self] in self?.makeMainMenu() ?? NSMenu() }
         setUpStatusItem()
         installEditMenu()
