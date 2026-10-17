@@ -75,21 +75,23 @@ struct RootView: View {
                     .transition(.scale(scale: 0.96).combined(with: .opacity))
                 }
 
+                // The dragged icon follows the pointer through `dragPoint`, which only this watches: moving it
+                // re-evaluates nothing else.
                 if let d = model.drag, d.sourceFolder == nil || d.extracted {
-                    EntryIcon(model: model, entry: d.entry, size: m.iconSize)
-                        .overlay(alignment: .topTrailing) {
-                            if !d.companions.isEmpty { CountBadge(count: d.companions.count + 1, size: m.iconSize) }
-                        }
-                        .scaleEffect(1.1)
-                        .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
-                        .position(x: d.location.x - d.grab.width, y: d.location.y - d.grab.height)
-                        .allowsHitTesting(false)
+                    DragFloat(point: model.dragPoint, grab: d.grab) {
+                        EntryIcon(model: model, entry: d.entry, size: m.iconSize)
+                            .overlay(alignment: .topTrailing) {
+                                if !d.companions.isEmpty { CountBadge(count: d.companions.count + 1, size: m.iconSize) }
+                            }
+                            .scaleEffect(1.1)
+                            .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
+                    }
                 } else if let d = model.drag, let id = d.sourceFolder {
-                    EntryIcon(model: model, entry: d.entry, size: model.folderPanel(for: id).iconSize)
-                        .scaleEffect(1.1)
-                        .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
-                        .position(x: d.location.x - d.grab.width, y: d.location.y - d.grab.height)
-                        .allowsHitTesting(false)
+                    DragFloat(point: model.dragPoint, grab: d.grab) {
+                        EntryIcon(model: model, entry: d.entry, size: model.folderPanel(for: id).iconSize)
+                            .scaleEffect(1.1)
+                            .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
+                    }
                 }
             }
             .coordinateSpace(name: "root")
@@ -235,49 +237,78 @@ struct PageDots: View {
 
 /// All pages live in one positioned layer so an icon keeps its identity (and its drag gesture)
 /// when it moves to another page.
+///
+/// This works out each icon's look (CellLook) for GridLayers, which draws them all as layers, and GridInput takes
+/// their clicks and drags. Neither has a view per icon, so a change to the grid re-evaluates two views, not 150.
 struct PagerView: View {
     @ObservedObject var model: LaunchpadModel
     let metrics: GridMetrics
+    @Environment(\.displayScale) private var scale
 
     var body: some View {
         let w = metrics.size.width
-        ZStack(alignment: .topLeading) {
-            if model.isSearching {
-                ForEach(Array(model.results.enumerated()), id: \.element.id) { i, app in
-                    let page = i / model.capacity, slot = i % model.capacity
-                    let p = metrics.cellCenter(slot)
-                    EntryCell(model: model, entry: .app(app.id), metrics: metrics, center: p, page: page, slot: slot)
-                        .position(x: p.x + CGFloat(page) * w, y: p.y)
-                }
-            } else {
-                ForEach(model.placedEntries) { item in
-                    let p = metrics.cellCenter(item.slot)
-                    EntryCell(model: model, entry: item.entry, metrics: metrics, center: p, page: item.page, slot: item.slot)
-                        .position(x: p.x + CGFloat(item.page) * w, y: p.y)
-                }
+        let art = CellLook.Art(model: model, metrics: metrics, scale: scale)
+        let items: [GridCell] = model.isSearching
+            ? model.results.enumerated().map { i, app in
+                GridCell(id: "search:" + app.id, entry: .app(app.id), page: i / model.capacity, slot: i % model.capacity,
+                         look: art.look(.app(app.id)))
             }
+            : model.placedEntries.map { GridCell(id: $0.id, entry: $0.entry, page: $0.page, slot: $0.slot, look: art.look($0.entry)) }
+        ZStack(alignment: .topLeading) {
+            // Everything that shows: icons and names as layers (GridLayers).
+            GridLayersHost(model: model, items: items, metrics: metrics, selection: model.selectionState, pager: model.pager,
+                           wiggle: model.wiggle)
+                .frame(width: w, height: metrics.size.height)
+                .allowsHitTesting(false)
+            // Over them, one view takes the icons' clicks and drags.
+            GridInput(model: model, items: items, metrics: metrics)
         }
         .frame(width: w, height: metrics.size.height, alignment: .topLeading)
     }
 }
 
-/// The plate under an icon while a dragged app is held over it, ready to make a folder: it grows from 72% on a
-/// spring (stiffness 520, damping 32) while fading in over 0.16 s, and shrinks back (420, 36) while fading out over
-/// 0.12 s when the app moves away.
-struct MergePlate: View {
-    let active: Bool
-    let size: CGFloat
+extension CellLook {
+    /// Works out a cell's look from the model; the pictures come from CellArt's caches.
+    @MainActor
+    struct Art {
+        let model: LaunchpadModel
+        let metrics: GridMetrics
+        let scale: CGFloat
 
-    var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-            .fill(.white.opacity(0.3))
-            .frame(width: size * 1.18, height: size * 1.18)
-            .modifier(Pop(shown: active))
+        func look(_ entry: Entry) -> CellLook {
+            let d = model.drag
+            let icon: NSImage? = switch entry {
+            case .app(let path): model.icons[path]
+            case .folder(let id): CellArt.folder(id, icons: model.previewIcons(id), size: metrics.iconSize, scale: scale)
+            }
+            let removable = entry.appPath.map(model.canUninstall) ?? false
+            return CellLook(
+                icon: icon,
+                label: CellArt.label(model.title(for: entry), width: metrics.cell.width * 0.94, scale: scale),
+                badge: removable ? CellArt.badge(size: metrics.iconSize, scale: scale) : nil,
+                check: model.selected.contains(entry) ? CellArt.check(size: metrics.iconSize, scale: scale) : nil,
+                hidden: d?.entry == entry && (d?.sourceFolder == nil || d?.extracted == true) || model.merged.contains(entry),
+                dimmed: entry.appPath.map(model.isInstalled) == false,
+                merging: model.mergeTarget == entry)
+        }
     }
 }
 
-/// A pressed icon darkens: black at 32% over the icon itself (spec 13.4: LaunchOS's Highlight colour; its shape
-/// there is only inferred, so the icon's own shape is used).
+/// Puts its content where the dragged icon is. Only this watches the pointer during a drag.
+struct DragFloat<Content: View>: View {
+    @ObservedObject var point: DragPoint
+    let grab: CGSize
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .position(x: point.location.x - grab.width, y: point.location.y - grab.height)
+            .allowsHitTesting(false)
+    }
+}
+
+/// A pressed icon in an open folder darkens: black at 32% over the icon itself (spec 13.4: the highlight colour; its
+/// shape there is only inferred, so the icon's own shape is used). The grid's icons do the same as layers.
 struct PressShade<Icon: View>: View {
     @ViewBuilder let icon: () -> Icon
 
@@ -286,9 +317,9 @@ struct PressShade<Icon: View>: View {
     }
 }
 
-/// LaunchOS's one "pop" (spec 13.2), for the merge plate and the uninstall badge: in, scale 0.72 → 1 on a spring
-/// (mass 1, stiffness 520, damping 32) while fading in over 0.16 s ease-out; out, back to 0.72 (stiffness 420,
-/// damping 36) while fading out over 0.12 s ease-in.
+/// The one "pop" (spec 13.2), for the uninstall badges in an open folder (the grid's own pop as layers, in
+/// CellLayers): in, scale 0.72 → 1 on a spring (mass 1, stiffness 520, damping 32) while fading in over 0.16 s
+/// ease-out; out, back to 0.72 (stiffness 420, damping 36) while fading out over 0.12 s ease-in.
 struct Pop: ViewModifier {
     let shown: Bool
 
@@ -340,22 +371,6 @@ struct PagerSlide<Content: View>: View {
     }
 }
 
-/// The keyboard selection's highlight behind one cell. Only these small views watch the selection and the page,
-/// so moving the selection or turning a page doesn't re-evaluate the cells themselves.
-struct SelectionHighlight: View {
-    @ObservedObject var selection: SelectionState
-    @ObservedObject var pager: PagerState
-    let page: Int
-    let slot: Int
-    let width: CGFloat
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(.white.opacity(pager.page == page && selection.index == slot ? 0.2 : 0))
-            .frame(width: width)
-    }
-}
-
 /// How a press on an icon is read: moving 4 pt from the press (any direction) drags it; releasing without having
 /// dragged, within the icon's frame widened by 6 pt left and right and 2 pt up and down, is a click.
 enum IconPress {
@@ -377,108 +392,122 @@ enum IconPress {
     }
 }
 
-struct EntryCell: View {
-    @ObservedObject var model: LaunchpadModel
-    let entry: Entry
+/// The icons' clicks and drags, for all of them in one view (it draws nothing; GridLayers draws the icons). Each
+/// icon's column, its icon and name with 6 pt more above and below, takes a press there; everywhere else is blank and
+/// falls through to the background (paging, closing). In wiggle mode a click on an icon's ✕ badge moves the app to
+/// the Trash. Rules as before, from IconPress: 4 pt of movement drags, a release over the icon is a click.
+///
+/// One view rather than one per icon: a change to the grid re-evaluates it once, and each pointer event is matched
+/// against one gesture instead of one per icon.
+struct GridInput: View {
+    let model: LaunchpadModel
+    let items: [GridCell]
     let metrics: GridMetrics
-    /// The cell's centre in the root coordinate space while its page is showing.
-    let center: CGPoint
-    let page: Int
-    let slot: Int
-    @GestureState private var pressed = false
+    /// The pressed icon's cell, shaded while pressed (spec 13.4).
+    @GestureState private var pressed: String?
+    /// The icon the press started on, for the whole gesture (a drag can turn the page under it).
+    @State private var press = Press()
+
+    final class Press {
+        var item: GridCell?
+        var onBadge = false
+    }
+
+    private var columnHeight: CGFloat { metrics.iconSize + metrics.labelSpacing + 16 + 12 }
+
+    /// An icon's column in the pager's space (its page laid out to the right).
+    private func column(_ item: GridCell) -> CGRect {
+        let c = metrics.cellCenter(item.slot)
+        let f = IconPress.frame(center: c, iconSize: metrics.iconSize, cellWidth: metrics.cell.width * 0.94, height: columnHeight)
+        return f.offsetBy(dx: CGFloat(item.page) * metrics.size.width, dy: 0)
+    }
+
+    /// The icon on the showing page whose column holds `p` (in the window's space).
+    private func hit(_ p: CGPoint) -> GridCell? {
+        guard let slot = metrics.slot(at: p) else { return nil }
+        let page = model.currentPage
+        guard let item = items.first(where: { $0.page == page && $0.slot == slot }) else { return nil }
+        let c = metrics.cellCenter(slot)
+        let f = IconPress.frame(center: c, iconSize: metrics.iconSize, cellWidth: metrics.cell.width * 0.94, height: columnHeight)
+        return f.contains(p) ? item : nil
+    }
+
+    /// Where GridLayers draws the item's ✕ badge: over the icon's top-left corner.
+    private func onBadge(_ item: GridCell, _ p: CGPoint) -> Bool {
+        let s = metrics.iconSize
+        let c = metrics.cellCenter(item.slot)
+        let icon = CGPoint(x: c.x, y: c.y - (metrics.contentHeight - s) / 2)
+        let badge = CGRect(x: icon.x - s * 0.52, y: icon.y - s * 0.52, width: s * 0.32, height: s * 0.32)
+        return model.optionHeld && item.look.badge != nil && badge.insetBy(dx: -2, dy: -2).contains(p)
+    }
 
     var body: some View {
-        let d = model.drag
-        // Also hidden: an app just dropped into a folder, while its cell goes (it would show for a moment).
-        let isDragged = d?.entry == entry && (d?.sourceFolder == nil || d?.extracted == true) || model.merged.contains(entry)
-        let merging = model.mergeTarget == entry
-        let picked = model.selected.contains(entry)
-        let _ = FrameLog.shared.countCell()
-        let frame = IconPress.frame(center: center, iconSize: metrics.iconSize, cellWidth: metrics.cell.width * 0.94,
-                                    height: metrics.contentHeight + 12)
-        VStack(spacing: metrics.labelSpacing) {
-            // The merge target, and the folder it becomes, carry both icons so the change is a fade in place
-            // that moves with the cell (C8); every other cell draws just its own.
-            EntryIcon(model: model, entry: entry, size: metrics.iconSize, morphFrom: merging ? entry : model.morphSource(entry))
-                .overlay { if pressed { PressShade { EntryIcon(model: model, entry: entry, size: metrics.iconSize) } } }
-                .background(
-                    RoundedRectangle(cornerRadius: metrics.iconSize * 0.28, style: .continuous)
-                        .fill(.white.opacity(picked ? 0.22 : 0))
-                        .frame(width: metrics.iconSize * 1.18, height: metrics.iconSize * 1.18)
-                )
-                .background(MergePlate(active: merging, size: metrics.iconSize))
-                .overlay(alignment: .topTrailing) {
-                    if picked { SelectionCheck(size: metrics.iconSize) }
-                }
-                .overlay(alignment: .topLeading) {
-                    // Pops in and out with ⌥ (spec 13.2) rather than appearing at once.
-                    if let path = entry.appPath, model.canUninstall(path) {
-                        UninstallBadge(size: metrics.iconSize) { model.uninstall(path) }
-                            .modifier(Pop(shown: model.optionHeld))
-                            .allowsHitTesting(model.optionHeld)
+        let s = metrics.iconSize
+        Color.clear
+            .frame(width: metrics.size.width, height: metrics.size.height)
+            .contentShape(Columns(rects: items.map(column)))
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("root"))
+                    .updating($pressed) { v, id, _ in
+                        if id == nil, let item = hit(v.startLocation), !onBadge(item, v.startLocation) { id = item.id }
                     }
-                }
-                .modifier(Jiggle(active: model.optionHeld, seed: entry.key.hashValue))
-            // White, Body size, a soft shadow (black 0.26, blur 2, 1 pt down), as LaunchOS's names (spec, section 4).
-            Text(model.title(for: entry))
-                .font(.body)
-                .foregroundStyle(.white)
-                // A name that changes (the target app becoming its folder) changes at once: a fading old name
-                // would stay behind where the cell was.
-                .contentTransition(.identity)
-                .shadow(color: .black.opacity(0.26), radius: 2, y: 1)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(width: metrics.cell.width * 0.94)
+                    .onChanged { v in
+                        if press.item == nil, model.drag == nil {
+                            press.item = hit(v.startLocation)
+                            press.onBadge = press.item.map { onBadge($0, v.startLocation) } ?? false
+                        }
+                        // A press on the badge is the badge's: it doesn't drag the icon.
+                        guard let item = press.item, !press.onBadge, model.drag != nil || IconPress.isDrag(v) else { return }
+                        let c = metrics.cellCenter(item.slot)
+                        let icon = CGPoint(x: c.x, y: c.y - (metrics.contentHeight - s) / 2)
+                        model.dragChanged(item.entry, at: v.location, grabbedAt: v.startLocation, iconCenter: icon, iconSize: s)
+                    }
+                    .onEnded { v in
+                        let item = press.item, badge = press.onBadge
+                        press.item = nil
+                        press.onBadge = false
+                        if model.drag != nil {
+                            model.dragEnded()
+                        } else if let item, badge {
+                            if onBadge(item, v.location), let path = item.entry.appPath { model.uninstall(path) }
+                        } else if let item {
+                            let c = metrics.cellCenter(item.slot)
+                            let frame = IconPress.frame(center: c, iconSize: s, cellWidth: metrics.cell.width * 0.94,
+                                                        height: metrics.contentHeight + 12)
+                            if IconPress.isClick(v, frame: frame) { model.tap(item.entry) }
+                        }
+                    }
+            )
+            .onChange(of: pressed) { old, new in
+                if let old { model.gridLayers?.press(old, false) }
+                if let new { model.gridLayers?.press(new, true) }
+            }
+    }
+
+    /// The icons' columns, for hit-testing.
+    struct Columns: Shape {
+        let rects: [CGRect]
+
+        func path(in rect: CGRect) -> Path {
+            var p = Path()
+            p.addRects(rects)
+            return p
         }
-        .padding(.vertical, 6)
-        .background(SelectionHighlight(selection: model.selectionState, pager: model.pager, page: page, slot: slot,
-                                        width: metrics.iconSize * 1.45))
-        .opacity(isDragged ? 0 : (entry.appPath.map(model.isInstalled) == false ? 0.4 : 1))
-        .contentShape(CenteredColumn(width: frame.width))
-        .gesture(
-            DragGesture(minimumDistance: 0, coordinateSpace: .named("root"))
-                .updating($pressed) { _, isPressed, _ in isPressed = true }
-                .onChanged { v in
-                    guard model.drag != nil || IconPress.isDrag(v) else { return }
-                    let icon = CGPoint(x: center.x, y: center.y - (metrics.contentHeight - metrics.iconSize) / 2)
-                    model.dragChanged(entry, at: v.location, grabbedAt: v.startLocation, iconCenter: icon, iconSize: metrics.iconSize)
-                }
-                .onEnded { v in
-                    if model.drag != nil {
-                        model.dragEnded()
-                    } else if IconPress.isClick(v, frame: frame) {
-                        model.tap(entry)
-                    }
-                }
-        )
     }
 }
 
+/// An icon drawn by SwiftUI: the one being dragged.
 struct EntryIcon: View {
     @ObservedObject var model: LaunchpadModel
     let entry: Entry
     let size: CGFloat
-    /// The app a merge turns (or has just turned) into this folder: both icons stay in the view, the app's fading
-    /// out and the folder's in, so nothing is inserted or removed and both move with the cell (C8).
-    var morphFrom: Entry? = nil
 
     var body: some View {
-        if let app = morphFrom?.appPath {
-            let folder: UUID? = { if case .folder(let id) = entry { return id } else { return nil } }()
-            ZStack {
-                AppIconImage(image: model.icons[app], size: size)
-                    .opacity(folder == nil ? 1 : 0)
-                FolderPreview(icons: folder.map(model.previewIcons) ?? [], size: size)
-                    .opacity(folder == nil ? 0 : 1)
-            }
-        } else {
-            switch entry {
-            case .app(let path):
-                AppIconImage(image: model.icons[path], size: size)
-            case .folder(let id):
-                FolderPreview(icons: model.previewIcons(id), size: size)
-            }
+        switch entry {
+        case .app(let path):
+            AppIconImage(image: model.icons[path], size: size)
+        case .folder(let id):
+            FolderPreview(icons: model.previewIcons(id), size: size)
         }
     }
 }
@@ -578,7 +607,7 @@ struct FolderOverlay: View {
             ZStack(alignment: .topLeading) {
                 title(panel: panel)
                 ForEach(Array(apps.enumerated()), id: \.element) { i, path in
-                    FolderAppCell(model: model, path: path, folderID: folderID, panel: panel, center: panel.center(i))
+                    FolderAppCell(model: model, wiggle: model.wiggle, path: path, folderID: folderID, panel: panel, center: panel.center(i))
                         .position(panel.center(i))
                 }
             }
@@ -639,11 +668,13 @@ struct FolderBackdrop: ViewModifier {
 
 struct FolderAppCell: View {
     @ObservedObject var model: LaunchpadModel
+    @ObservedObject var wiggle: WiggleState
     let path: String
     let folderID: UUID
     let panel: FolderPanel
     let center: CGPoint
     @GestureState private var pressed = false
+    @Environment(\.displayScale) private var scale
 
     var body: some View {
         let dragged = model.drag?.entry == .app(path) && model.drag?.sourceFolder == folderID
@@ -656,16 +687,13 @@ struct FolderAppCell: View {
                 .overlay(alignment: .topLeading) {
                     if model.canUninstall(path) {
                         UninstallBadge(size: panel.iconSize) { model.uninstall(path) }
-                            .modifier(Pop(shown: model.optionHeld))
-                            .allowsHitTesting(model.optionHeld)
+                            .modifier(Pop(shown: wiggle.on))
+                            .allowsHitTesting(wiggle.on)
                     }
                 }
-                .modifier(Jiggle(active: model.optionHeld, seed: path.hashValue))
-            Text(model.title(for: .app(path)))
-                .font(.body)
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.26), radius: 2, y: 1)
-                .lineLimit(1)
+                .modifier(Jiggle(active: wiggle.on, seed: path.hashValue))
+            Image(nsImage: CellArt.label(model.title(for: .app(path)), width: panel.cell.width * 0.94, scale: scale).image)
+                .padding(-CellArt.labelPad)
                 .frame(width: panel.cell.width * 0.94)
         }
         .opacity(dragged ? 0 : 1)
@@ -687,19 +715,6 @@ struct FolderAppCell: View {
                     }
                 }
         )
-    }
-}
-
-struct SelectionCheck: View {
-    let size: CGFloat
-
-    var body: some View {
-        Image(systemName: "checkmark.circle.fill")
-            .font(.system(size: size * 0.24, weight: .bold))
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(.white, Color.accentColor)
-            .shadow(radius: 2)
-            .offset(x: size * 0.04, y: -size * 0.04)
     }
 }
 
@@ -736,10 +751,9 @@ struct CountBadge: View {
     }
 }
 
-/// Launchpad-style wobble while Option is held.
-/// Wiggle mode as LaunchOS (spec 13.3): each icon rocks between ±θ about its centre, θ at random 1.38°–1.72°, each
-/// way in 0.105–0.125 s, and bobs 0.8–1.4 pt, each way in 0.12–0.145 s, starting 0–0.03 s late; all easing in and
-/// out, back and forth for as long as it lasts. The values are drawn per icon (from `seed`), so no two move together.
+/// Wiggle mode for the icons of an open folder (spec 13.3, WiggleMotion), as SwiftUI animations: the panel's mask
+/// must cover them as it grows and shrinks, which it can't do for Core Animation layers. The grid's own icons wiggle
+/// as layers (CellLayers).
 struct Jiggle: ViewModifier {
     let active: Bool
     var seed: Int = 0
@@ -747,17 +761,12 @@ struct Jiggle: ViewModifier {
     @State private var bob = false
 
     func body(content: Content) -> some View {
-        var random = SplitMix(seed)
-        let angle = random.next(in: 1.38...1.72)
-        let swing = random.next(in: 0.105...0.125)
-        let lift = random.next(in: 0.8...1.4)
-        let bounce = random.next(in: 0.12...0.145)
-        let delay = random.next(in: 0...0.03)
+        let w = WiggleMotion(seed: seed)
         content
-            .rotationEffect(.degrees(active ? (rock ? angle : -angle) : 0))
-            .animation(active ? .easeInOut(duration: swing).repeatForever(autoreverses: true).delay(delay) : .default, value: rock)
-            .offset(y: active && bob ? -lift : 0)
-            .animation(active ? .easeInOut(duration: bounce).repeatForever(autoreverses: true).delay(delay) : .default, value: bob)
+            .rotationEffect(.radians(active ? (rock ? w.angle : -w.angle) : 0))
+            .animation(active ? .easeInOut(duration: w.swing).repeatForever(autoreverses: true).delay(w.delay) : .default, value: rock)
+            .offset(y: active && bob ? -w.lift : 0)
+            .animation(active ? .easeInOut(duration: w.bounce).repeatForever(autoreverses: true).delay(w.delay) : .default, value: bob)
             .onChange(of: active) { _, on in
                 rock = on
                 bob = on

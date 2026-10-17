@@ -263,6 +263,60 @@ enum SelfTest {
         drag(from: gap, by: 320)
         check("paging: a drag right from the same gap turns back to page 1", model.currentPage == 0 && model.drag == nil)
 
+        // 14b. The icons are layers in one view (GridLayers); one view over them takes their presses (GridInput).
+        //      Through the window, as the pointer does: a press shades the icon, a drag along the row below the icons
+        //      moves it, a click on a folder opens it.
+        settle()
+        check("layers: one cell drawn per icon", model.gridLayers?.cellCount == model.placedEntries.count)
+        func send(_ type: NSEvent.EventType, _ p: CGPoint) {
+            let window = controller.window
+            if let e = NSEvent.mouseEvent(with: type, location: NSPoint(x: p.x, y: window.frame.height - p.y), modifierFlags: [],
+                                          timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                          context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) {
+                window.sendEvent(e)
+            }
+            wait(1.0 / 60)
+        }
+        model.optionHeld = true
+        settle()
+        let removable = model.placedEntries.filter { $0.entry.appPath.map(model.canUninstall) ?? false }.count
+        check("wiggle: with ⌥ every icon rocks and bobs, and each removable app shows its ✕ (\(removable))",
+              model.gridLayers?.wigglingCount == model.placedEntries.count && model.gridLayers?.badgeCount == removable)
+        model.optionHeld = false
+        settle()
+        check("wiggle: released, they stop and the badges go", model.gridLayers?.wigglingCount == 0 && model.gridLayers?.badgeCount == 0)
+        func page0() -> [Entry] { model.layout.pages[0] }
+        let carried = page0()[1]
+        let below = { (slot: Int) -> CGPoint in let c = m.cellCenter(slot); return CGPoint(x: c.x, y: c.y + m.cell.height * 0.42) }
+        send(.leftMouseDown, m.iconCenter(1))
+        settle()
+        check("input: a press on an icon shades it", model.gridLayers?.pressedCell == carried.key)
+        for k in 1...24 {
+            let t = CGFloat(k) / 24
+            let from = k <= 4 ? m.iconCenter(1) : below(1), to = k <= 4 ? below(1) : below(3)
+            let u = k <= 4 ? CGFloat(k) / 4 : (t - 4.0 / 24) / (20.0 / 24)
+            send(.leftMouseDragged, CGPoint(x: from.x + (to.x - from.x) * u, y: from.y + (to.y - from.y) * u))
+        }
+        send(.leftMouseUp, below(3))
+        settle()
+        check("input: dragging an icon two cells right moves it there",
+              model.drag == nil && (page0().firstIndex(of: carried) ?? 0) >= 2 && page0()[1] != carried)
+        check("input: released, nothing stays shaded", model.gridLayers?.pressedCell == nil)
+        if let (page, slot, id) = model.layout.pages.enumerated().lazy.compactMap({ p, entries in
+            entries.firstIndex { $0.folderID != nil }.flatMap { s in entries[s].folderID.map { (p, s, $0) } }
+        }).first {
+            model.go(to: page)
+            wait(0.9)
+            send(.leftMouseDown, m.iconCenter(slot))
+            send(.leftMouseUp, m.iconCenter(slot))
+            settle()
+            check("input: a click on a folder opens it", model.openFolder == id)
+            model.closeFolder()
+            wait(1.0)
+            model.go(to: 0)
+            wait(0.9)
+        }
+
         // 15. Naming a folder: Return keeps the name and ends the editing (the field used to select its text again).
         if let (page, slot, id) = model.layout.pages.enumerated().lazy.compactMap({ p, entries in
             entries.enumerated().first { if case .folder = $0.element { return true } else { return false } }

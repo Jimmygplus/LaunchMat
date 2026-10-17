@@ -2,9 +2,10 @@ import AppKit
 import SwiftUI
 import LaunchMatCore
 
+/// What is being dragged. It changes when a drag starts, leaves its folder and ends; the pointer's moves go to
+/// `LaunchpadModel.dragPoint`, so they don't re-evaluate the grid.
 struct DragState: Equatable {
     var entry: Entry
-    var location: CGPoint
     /// Set when the drag started inside an open folder.
     var sourceFolder: UUID?
     /// The app left the folder panel and now has a slot in the main grid.
@@ -42,6 +43,12 @@ struct PlacedEntry: Identifiable {
     var id: String
 }
 
+/// Where the pointer drags an icon, watched only by the floating icon (DragFloat).
+@MainActor
+final class DragPoint: ObservableObject {
+    @Published var location: CGPoint = .zero
+}
+
 /// See LaunchpadModel.focus.
 @MainActor
 final class FocusSignal: ObservableObject {
@@ -53,6 +60,12 @@ final class FocusSignal: ObservableObject {
 final class PagerState: ObservableObject {
     @Published var page = 0
     @Published var x: CGFloat = 0
+}
+
+/// Wiggle mode, ⌥ held (see LaunchpadModel.optionHeld).
+@MainActor
+final class WiggleState: ObservableObject {
+    @Published var on = false
 }
 
 /// The keyboard selection on the showing page (see LaunchpadModel.selection).
@@ -84,8 +97,12 @@ final class LaunchpadModel: ObservableObject {
     let folderPresentation = FolderPresentation()
     private var folderGeneration = 0
     @Published private(set) var drag: DragState?
+    /// The pointer during a drag. Kept out of the model's published state: following it moves the floating icon only.
+    let dragPoint = DragPoint()
+    /// The layers that draw the grid (GridLayers), for the press shade.
+    weak var gridLayers: GridLayerView?
     @Published private(set) var mergeTarget: Entry?
-    /// The keyboard selection (a slot on the showing page). Kept in `selectionState`, watched only by the highlights.
+    /// The keyboard selection (a slot on the showing page). Kept in `selectionState`, watched only by the grid's layers.
     var selection: Int? {
         get { selectionState.index }
         set { selectionState.index = newValue }
@@ -93,8 +110,13 @@ final class LaunchpadModel: ObservableObject {
     let selectionState = SelectionState()
     /// ⌘-click multi-selection.
     @Published var selected: Set<Entry> = []
-    /// Option held: show uninstall badges (Launchpad's "jiggle" mode).
-    @Published var optionHeld = false
+    /// Option held: show uninstall badges (Launchpad's "jiggle" mode). Kept in `wiggle`, not in the model's published
+    /// state: the grid's layers start and stop wiggling without re-evaluating the grid.
+    var optionHeld: Bool {
+        get { wiggle.on }
+        set { if wiggle.on != newValue { wiggle.on = newValue } }
+    }
+    let wiggle = WiggleState()
     @Published private(set) var gridSize = GridSize.load()
     @Published var wallpaper: NSImage?
     /// The screen the grid was last opened on, for a wallpaper that arrives late.
@@ -156,12 +178,6 @@ final class LaunchpadModel: ObservableObject {
             guard case .folder(let id) = item.entry, let alias = cellAlias[id]?.key, !keys.contains(alias) else { return item }
             return PlacedEntry(entry: item.entry, page: item.page, slot: item.slot, id: alias)
         }
-    }
-
-    /// For a folder just made by a drop, the app whose cell it took over (its icon fades into the folder's).
-    func morphSource(_ entry: Entry) -> Entry? {
-        guard case .folder(let id) = entry else { return nil }
-        return cellAlias[id]
     }
 
     /// Apps just dropped into a folder: their cells stay hidden while they go. Cleared at the next drag.
@@ -956,7 +972,7 @@ final class LaunchpadModel: ObservableObject {
         guard !isSearching else { return }
         if drag == nil {
             merged.removeAll()
-            var state = DragState(entry: entry, location: loc)
+            var state = DragState(entry: entry)
             if let start, let iconCenter { state.grab = DragState.grab(at: start, iconCenter: iconCenter, iconSize: iconSize) }
             if selected.contains(entry), selected.count > 1 {
                 // The other selected items ride along: lift them out of the grid now, put them back on drop.
@@ -970,7 +986,7 @@ final class LaunchpadModel: ObservableObject {
             selection = nil
             lastSortPoint = nil
         }
-        drag?.location = loc
+        dragPoint.location = loc
         guard let dragged = drag?.entry else { return }
         handleEdge(loc)
         guard let idx = metrics.slot(at: loc) else {
@@ -1034,7 +1050,7 @@ final class LaunchpadModel: ObservableObject {
         if pendingMerge == target { return }
         cancelMerge()
         pendingMerge = target
-        // After 0.1 s over the merge zone the target shows its merge plate (see MergePlate); dropping then merges.
+        // After 0.1 s over the merge zone the target shows its merge plate (CellLayers); dropping then merges.
         mergeTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 100_000_000)
             guard !Task.isCancelled, let self, self.pendingMerge == target else { return }
@@ -1172,11 +1188,11 @@ final class LaunchpadModel: ObservableObject {
             return
         }
         if drag == nil {
-            var state = DragState(entry: .app(path), location: loc, sourceFolder: folder)
+            var state = DragState(entry: .app(path), sourceFolder: folder)
             if let start, let iconCenter { state.grab = DragState.grab(at: start, iconCenter: iconCenter, iconSize: iconSize) }
             drag = state
         }
-        drag?.location = loc
+        dragPoint.location = loc
         let panel = folderPanel(for: folder)
         if !panel.frame.insetBy(dx: -20, dy: -20).contains(loc) {
             // Pulled out of the folder: it gets a live slot in the main grid from now on.
