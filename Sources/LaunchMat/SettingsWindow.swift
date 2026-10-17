@@ -69,6 +69,8 @@ final class SettingsWindowController: NSWindowController {
         for (title, symbol, view) in pages {
             let host = NSHostingController(rootView: view.frame(width: 460).fixedSize(horizontal: false, vertical: true))
             host.sizingOptions = .preferredContentSize
+            // The window's title is the selected tab's: without one it read "Untitled".
+            host.title = title
             let item = NSTabViewItem(viewController: host)
             item.label = title
             item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
