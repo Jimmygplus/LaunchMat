@@ -58,6 +58,19 @@ on the **notarized DMG** before tagging a release.
       earlier).
 - [ ] Launch at Login: toggle it, log out and back in, and the menu-bar icon is there.
 
+## Frame rate (`--fps-bench`)
+`LaunchMat --fps-bench` opens the grid and plays each scene through the real event handlers, then prints every run and
+the medians: `open`/`close` (10 times), `page` (swipes and wheel notches), `drag` (an icon carried four cells right and
+back, the others making room), `dragpage` (an icon held at the right edge until the page turns), `jiggle` (⌥ for 2 s),
+`jdrag` (a drag while wiggling) and `folder` (`fopen`/`fclose`, a click on the first folder and on blank space). It
+reads the saved layout and never writes it.
+- **Per run:** display frames, the longest gap and the frames over 1.5 refresh intervals ("dropped"); the main thread's
+  longest busy stretch and how many were over 8.3 ms (a 120 Hz frame) and 16.7 ms (60 Hz); icon cells drawn again.
+- **Options:** `--scenes drag,jiggle` (some only), `--runs N` (default 3), `--bench-screen N` (`NSScreen.screens[N]`),
+  `--offscreen` (a made-up screen far from the real ones: nothing is seen, the app isn't activated, and only the main
+  thread and cell counts mean anything).
+- **Without `--offscreen` the grid covers the screen for about two minutes:** ask before running it on someone's Mac.
+
 ## Film takes (`--film-take`, test builds only)
 The film's screen recordings are played by the app itself, so nobody has to drive the mouse and no permission is
 needed. Each shot hands synthetic events to the app (as `--mouse-test` does; the real pointer is not moved, the film
