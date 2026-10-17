@@ -67,7 +67,9 @@ struct RootView: View {
                         .contentShape(Rectangle())
                         .onTapGesture {}
                         .transition(.opacity)
-                    WhatsNewCard(card: card, releaseNotes: {
+                    WhatsNewCard(card: card, wallpaper: model.wallpaper,
+                                 icons: (model.layout.pages.first ?? []).compactMap(\.appPath).prefix(2).map { model.icons[$0] },
+                                 releaseNotes: {
                         model.dismissWhatsNew()
                         model.openReleaseNotes?()
                     }, dismiss: { model.dismissWhatsNew() })

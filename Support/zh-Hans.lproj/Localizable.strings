@@ -138,10 +138,15 @@
 "settings.reset.button" = "重置…";
 "settings.showGuide" = "再次显示欢迎指南";
 "settings.showInFinder" = "在访达中显示";
+"settings.showOn" = "显示在";
 "settings.source" = "源代码";
 "settings.unhide" = "取消隐藏";
 "settings.unhideAll" = "全部取消隐藏";
 "settings.whatsNew" = "新功能";
+"showOn.active" = "当前屏幕";
+"showOn.cursor" = "鼠标所在屏幕";
+"showOn.dock" = "程序坞所在屏幕";
+"showOn.main" = "主屏幕";
 "uninstall.appAndFiles" = "移动 App 和 %lld 个文件";
 "uninstall.appAndOne" = "移动 App 和 1 个文件";
 "uninstall.appOnly" = "仅移动 App";
@@ -154,8 +159,9 @@
 "uninstall.running.title" = "“%@”正在运行";
 "uninstall.title" = "要将“%@”移到废纸篓吗？";
 "uninstall.trash" = "移到废纸篓";
-"whatsNew.0.1.2.pinyin" = "输入 wx 现在能找到微信了，Mac 是英文系统也行。";
-"whatsNew.0.1.2.rename" = "LaunchGrid 现在叫 LaunchMat。你的布局也跟着过来了。";
+"whatsNew.0.2.0.folders" = "文件夹从图标里展开，关上时又收回图标里。";
+"whatsNew.0.2.0.menu" = "点菜单栏图标打开网格，右键点它进入设置。";
+"whatsNew.0.2.0.smooth" = "拖动很顺，按住 ⌥ 图标就会抖动。";
 "whatsNew.ok" = "好";
 "whatsNew.releaseNotes" = "发布说明";
 "whatsNew.title" = "LaunchMat %@ 的新变化";

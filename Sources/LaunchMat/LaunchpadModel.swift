@@ -854,9 +854,10 @@ final class LaunchpadModel: ObservableObject {
     }
 
     /// After the opening animation. Apps installed or removed are caught by AppWatcher, not here: nothing in the grid
-    /// changes while it is in use (spec §14).
+    /// changes while it is in use (spec §14). The version's card, the first time after an upgrade; never in the
+    /// self-test, the bench or the film's takes (they save nothing, and the card would cover the grid they drive).
     func didShow() {
-        if whatsNew == nil, let card = WhatsNew.due {
+        if persistenceEnabled, whatsNew == nil, let card = WhatsNew.due {
             withAnimation(.easeOut(duration: 0.25)) { whatsNew = card }
         }
     }

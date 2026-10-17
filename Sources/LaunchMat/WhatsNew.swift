@@ -16,21 +16,15 @@ struct WhatsNew: Equatable {
     static var current: WhatsNew? {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         switch version {
-        case "0.1.2":
-            var items = [L("whatsNew.0.1.2.pinyin", "Typing wx now finds 微信 even when your Mac’s language is English.")]
-            if cameFromLaunchGrid {
-                items.append(L("whatsNew.0.1.2.rename", "LaunchGrid is now called LaunchMat. Your layout came with you."))
-            }
-            return WhatsNew(version: version, items: items)
+        case "0.2.0":
+            return WhatsNew(version: version, items: [
+                L("whatsNew.0.2.0.folders", "Folders open out of their icon and close back into it."),
+                L("whatsNew.0.2.0.smooth", "Dragging is smooth, and holding ⌥ makes the icons wiggle."),
+                L("whatsNew.0.2.0.menu", "Click the menu bar icon to open the grid; right-click it for Settings."),
+            ])
         default:
             return nil
         }
-    }
-
-    /// People updating from LaunchGrid still have its layout file.
-    private static var cameFromLaunchGrid: Bool {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return FileManager.default.fileExists(atPath: support.appendingPathComponent("LaunchGrid/layout.json").path)
     }
 
     /// Due when this version has a card that hasn't been seen.
@@ -48,12 +42,15 @@ struct WhatsNew: Equatable {
 /// and two buttons at the bottom right.
 struct WhatsNewCard: View {
     let card: WhatsNew
+    /// For the picture: the desktop picture behind the grid, and two of the grid's own apps.
+    var wallpaper: NSImage? = nil
+    var icons: [NSImage?] = []
     let releaseNotes: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SearchPicture()
+            FolderPicture(wallpaper: wallpaper, icons: icons)
                 .frame(width: 480, height: 236)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .padding(4)
@@ -126,34 +123,35 @@ private struct KeyCapText: View {
     }
 }
 
-/// The picture: the search field with "wx" typed, and the one app it finds. Our own drawing, in the stand-in style of
-/// the website's demo (no real app icons).
-private struct SearchPicture: View {
+/// The picture: two of the grid's own apps and the folder they make, on the desktop picture behind the grid. All of
+/// it is the app's: its icons as the grid draws them (AppIconImage) and its folder icon (FolderPreview).
+private struct FolderPicture: View {
+    let wallpaper: NSImage?
+    let icons: [NSImage?]
+
     var body: some View {
+        let pair = Array(icons.prefix(2))
         ZStack {
-            LinearGradient(colors: [Color(red: 0.2, green: 0.17, blue: 0.36), Color(red: 0.07, green: 0.09, blue: 0.18)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-            VStack(spacing: 26) {
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.white.opacity(0.75))
-                    Text("wx").foregroundStyle(.white)
-                    Rectangle().fill(.white).frame(width: 1.5, height: 16)
-                    Spacer()
-                }
-                .font(.system(size: 15))
-                .padding(.horizontal, 12)
-                .frame(width: 230, height: 32)
-                .overlay(Capsule().stroke(.white.opacity(0.3), lineWidth: 0.8))
-                VStack(spacing: 6) {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(LinearGradient(colors: [Color(red: 0.36, green: 0.82, blue: 0.4), Color(red: 0.2, green: 0.62, blue: 0.27)],
-                                             startPoint: .top, endPoint: .bottom))
-                        .frame(width: 70, height: 70)
-                        .overlay(Text("W").font(.system(size: 28, weight: .bold)).foregroundStyle(.white))
-                        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white.opacity(0.18)).padding(-8))
-                    Text("微信").font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
-                }
+            if let wallpaper {
+                Image(nsImage: wallpaper).resizable().aspectRatio(contentMode: .fill)
+            } else {
+                LinearGradient(colors: [Color(white: 0.16), Color(white: 0.07)], startPoint: .top, endPoint: .bottom)
             }
+            HStack(spacing: 18) {
+                ForEach(Array(pair.enumerated()), id: \.offset) { i, icon in
+                    if i > 0 { symbol("plus") }
+                    AppIconImage(image: icon, size: 72)
+                }
+                symbol("arrow.right")
+                FolderPreview(icons: pair, size: 96)
+            }
+            .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
         }
+    }
+
+    private func symbol(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.85))
     }
 }
