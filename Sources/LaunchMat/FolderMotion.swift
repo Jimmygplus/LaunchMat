@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// How an opened folder moves and how a folder icon is drawn, from rea's measurements of LaunchOS (spec C7–C9,
+/// How an opened folder moves and how a folder icon is drawn, from the measured reference (spec C7–C9,
 /// "C7–C9 详解"). One place to change them.
 enum FolderMotion {
     /// Opening and closing are the same animation in reverse: 0.28 s ease-in-ease-out, everything starting together
@@ -14,8 +14,8 @@ enum FolderMotion {
     /// it was until then]
     static let backdropDim = 0.25
 
-    /// The open panel's corner radius: max(16, 0.24 × its shorter side). [measured; LaunchOS uses a fixed 30 under
-    /// a setting not identified yet]
+    /// The open panel's corner radius: max(16, 0.24 × its shorter side). [measured; the reference uses a fixed 30
+    /// under a setting not identified yet]
     static func panelRadius(_ panel: CGSize) -> CGFloat { max(16, 0.24 * min(panel.width, panel.height)) }
 
     // The folder icon's preview (C7). [measured]

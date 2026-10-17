@@ -197,7 +197,7 @@ struct SearchField: View {
     }
 }
 
-/// The search field's and the ⋯ button's base: glass on macOS 26 (it adapts to what is behind it, as LaunchOS's
+/// The search field's and the ⋯ button's base: glass on macOS 26 (it adapts to what is behind it, as the spec's
 /// adaptive glass does), white 0.2 before.
 struct GlassBase: ViewModifier {
     let cornerRadius: CGFloat

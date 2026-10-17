@@ -1,11 +1,11 @@
 import AppKit
 import CoreImage
 
-/// The blurred desktop picture behind the grid. Taken from the desktop picture's own window, as LaunchOS does
-/// (spec, section 4): the window list gives the Dock's wallpaper window as large as the screen, and SkyLight's
-/// `CGSHWCaptureWindowList`, looked up at run time, captures it. The picture's file is never read, so a picture in a
-/// folder macOS guards (Downloads, Desktop…) asks for nothing. When the window or the function can't be found, or the
-/// capture comes back empty, one line goes to the log and the grid keeps its dark backdrop.
+/// The blurred desktop picture behind the grid. Taken from the desktop picture's own window (spec, section 4): the
+/// window list gives the Dock's wallpaper window as large as the screen, and SkyLight's `CGSHWCaptureWindowList`,
+/// looked up at run time, captures it. The picture's file is never read, so a picture in a folder macOS guards
+/// (Downloads, Desktop…) asks for nothing. When the window or the function can't be found, or the capture comes back
+/// empty, one line goes to the log and the grid keeps its dark backdrop.
 /// Computed on a background thread at launch and whenever the picture, the Space or the screens change, so opening
 /// the grid only reads the cache.
 @MainActor
@@ -85,7 +85,7 @@ enum Wallpaper {
         return image
     }
 
-    /// The picture behind the grid, as LaunchOS makes it (spec 13.1): darker (RGB × 0.7), more saturated (× 1.4),
+    /// The picture behind the grid (spec 13.1): darker (RGB × 0.7), more saturated (× 1.4),
     /// then blurred with a radius of 30 pt on the screen, in a 900 px wide copy. Made once, in the background; it
     /// fades in when ready (0.36 s), and nothing is laid over it.
     nonisolated static func blur(_ image: CGImage, screenWidth: CGFloat) -> CGImage? {

@@ -170,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// The menu bar icon: a click opens (or closes) the grid; a right-click or Control-click shows its menu (only
     /// opening the grid, settings, feedback, about and quit; everything else lives in the settings window or the
-    /// main menu). Jimmy's call, whatever LaunchOS does.
+    /// main menu). Jimmy's call, whatever the reference does.
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "square.grid.3x3.fill", accessibilityDescription: "LaunchMat")
