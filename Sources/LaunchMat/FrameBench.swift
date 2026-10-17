@@ -153,13 +153,14 @@ enum FrameBench {
             controller.pointer = { CGPoint(x: frame.midX, y: frame.midY) }
             controller.showOn = { .cursor }
             controller.activatesApp = false
-            // The app stays inactive, so the window's first click would only activate it (as in the self-test).
-            controller.window.contentView = TestHostingView(rootView: RootView(model: model))
-            FrameRateBoost.view = controller.window.contentView
             print("fps bench: off screen (1600 × 900), main thread and cell counts only")
         } else if let n = value("--bench-screen").flatMap(Int.init), NSScreen.screens.indices.contains(n) {
             screen = NSScreen.screens[n]
         }
+        // Started from a script the app may stay inactive (off screen it always does), and then the window's first click
+        // would only activate it: the content takes clicks anyway, as in the self-test and the film takes.
+        controller.window.contentView = TestHostingView(rootView: RootView(model: model))
+        FrameRateBoost.view = controller.window.contentView
         FrameLog.shared.enabled = true
         FrameLog.shared.view = controller.window.contentView
         func wait(_ s: Double) { RunLoop.main.run(until: Date().addingTimeInterval(s)) }
@@ -294,6 +295,8 @@ enum FrameBench {
         guard page.count >= 3 else { return print("fps bench: too few icons on the page for \(label)") }
         let far = min(cols - 1, min(page.count - 1, 5))
         let start = m.iconCenter(1)
+        let order = page
+        defer { if model.layout.pages[model.currentPage] == order { print("fps bench: \(label) moved nothing (no clicks reached the grid?)") } }
         FrameLog.shared.begin(label, seconds: 3.4)
         mouse.send(.leftMouseDown, start)
         RunLoop.main.run(until: Date().addingTimeInterval(1.0 / 120))
@@ -311,6 +314,8 @@ enum FrameBench {
         let page = model.currentPage < model.layout.pages.count ? model.layout.pages[model.currentPage] : []
         guard page.count >= 3 else { return print("fps bench: too few icons on the page for dragpage") }
         let start = m.iconCenter(2)
+        let before = model.currentPage
+        defer { if model.currentPage == before { print("fps bench: dragpage turned no page (no clicks reached the grid?)") } }
         let edge = CGPoint(x: m.size.width - 8, y: gap(m, 2).y)
         FrameLog.shared.begin("dragpage", seconds: 3.0)
         mouse.send(.leftMouseDown, start)
