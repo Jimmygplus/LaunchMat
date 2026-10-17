@@ -287,6 +287,20 @@ enum SelfTest {
         model.optionHeld = false
         settle()
         check("wiggle: released, they stop and the badges go", model.gridLayers?.wigglingCount == 0 && model.gridLayers?.badgeCount == 0)
+        check("wiggle: released, no animation is left on any icon, all at 0° and 0 pt",
+              model.gridLayers?.restingCount == model.placedEntries.count)
+        // ⌥ pressed (its event reaches the app), then released where the app never sees it (the key isn't down here):
+        // the keyboard watch stops the wiggle within 0.2 s.
+        if let down = NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: [.option],
+                                       timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: controller.window.windowNumber,
+                                       context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 58) {
+            NSApp.sendEvent(down) // through the app, as the keyboard's would come: its event monitor sees it
+        }
+        wait(0.05)
+        check("wiggle: ⌥'s event starts it", model.optionHeld)
+        settle()
+        check("wiggle: a release the app never got still stops it, every icon back at rest",
+              !model.optionHeld && model.gridLayers?.restingCount == model.placedEntries.count)
         func page0() -> [Entry] { model.layout.pages[0] }
         let carried = page0()[1]
         let below = { (slot: Int) -> CGPoint in let c = m.cellCenter(slot); return CGPoint(x: c.x, y: c.y + m.cell.height * 0.42) }

@@ -154,9 +154,46 @@ final class LaunchWindowController: NSObject {
             MainActor.assumeIsolated {
                 guard let self, self.isVisible, self.model.optionHeld != option else { return }
                 self.model.optionHeld = option
+                if option { self.watchOptionKey() }
             }
             return event
         } as Any)
+        // The grid's window no longer has the keyboard (another window, a menu's or dialog's own): the wiggle stops.
+        NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: window,
+                                               queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.optionKeyWatch != nil else { return }
+                self.stopWiggleFromKey()
+            }
+        }
+    }
+
+    /// While ⌥ wiggles the grid, its state is also read from the keyboard every 0.2 s: a release the app never sees
+    /// (it went to another app, or came during a menu's own loop) stops the wiggle all the same. Only for the key: a
+    /// wiggle started by the app itself (the film's takes, the bench) isn't watched.
+    private var optionKeyWatch: Timer?
+
+    private func watchOptionKey() {
+        optionKeyWatch?.invalidate()
+        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if !self.model.optionHeld {
+                    self.optionKeyWatch?.invalidate()
+                    self.optionKeyWatch = nil
+                } else if !NSEvent.modifierFlags.contains(.option) {
+                    self.stopWiggleFromKey()
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        optionKeyWatch = timer
+    }
+
+    private func stopWiggleFromKey() {
+        optionKeyWatch?.invalidate()
+        optionKeyWatch = nil
+        model.optionHeld = false
     }
 
     /// What the app does at launch before the grid is first shown: builds the window (`configure` adjusts it first),

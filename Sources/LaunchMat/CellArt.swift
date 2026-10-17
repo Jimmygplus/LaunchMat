@@ -237,6 +237,7 @@ final class GridLayerView: NSView {
     var cellCount: Int { cells.count }
     var pressedCell: String? { pressed }
     var wigglingCount: Int { cells.values.filter(\.isWiggling).count }
+    var restingCount: Int { cells.values.filter(\.isAtRest).count }
     var badgeCount: Int { cells.values.filter(\.showsBadge).count }
 
     /// The pressed cell is shaded (spec 13.4) until it is released.
@@ -492,6 +493,11 @@ final class CellLayers {
     func setPressed(_ on: Bool) { shade.isHidden = !on }
 
     var isWiggling: Bool { rock.animation(forKey: "wiggle") != nil && bob.animation(forKey: "wiggle") != nil }
+    /// No animation of any kind on the rocking and bobbing layers, and both back at 0° and 0 pt.
+    var isAtRest: Bool {
+        (rock.animationKeys() ?? []).isEmpty && (bob.animationKeys() ?? []).isEmpty
+            && CATransform3DIsIdentity(rock.transform) && CATransform3DIsIdentity(bob.transform)
+    }
     var showsBadge: Bool { badge.opacity == 1 && badge.contents != nil }
 
     func setHighlighted(_ on: Bool) { highlight.opacity = on ? 1 : 0 }
@@ -582,4 +588,10 @@ struct WiggleMotion {
         bounce = random.next(in: 0.12...0.145)
         delay = random.next(in: 0...0.03)
     }
+
+    /// The rotation at time `t` (seconds), easing between −angle and +angle, one way per `swing`.
+    func angle(at t: Double) -> Double { -angle * cos(.pi * (t - delay) / swing) }
+
+    /// The lift at time `t`, easing between 0 and `lift`, one way per `bounce`.
+    func lift(at t: Double) -> Double { lift * (1 - cos(.pi * (t - delay) / bounce)) / 2 }
 }

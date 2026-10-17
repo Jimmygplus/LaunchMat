@@ -751,32 +751,22 @@ struct CountBadge: View {
     }
 }
 
-/// Wiggle mode for the icons of an open folder (spec 13.3, WiggleMotion), as SwiftUI animations: the panel's mask
-/// must cover them as it grows and shrinks, which it can't do for Core Animation layers. The grid's own icons wiggle
-/// as layers (CellLayers).
+/// Wiggle mode for the icons of an open folder (spec 13.3, WiggleMotion), drawn by SwiftUI: the panel's mask must cover
+/// them as it grows and shrinks, which it can't do for Core Animation layers. The grid's own icons wiggle as layers
+/// (CellLayers). The angle and lift are worked out from the time on each frame while ⌥ is held, and are 0 the moment it
+/// isn't: a repeating SwiftUI animation, as before, went on after ⌥ was released.
 struct Jiggle: ViewModifier {
     let active: Bool
     var seed: Int = 0
-    @State private var rock = false
-    @State private var bob = false
 
     func body(content: Content) -> some View {
         let w = WiggleMotion(seed: seed)
-        content
-            .rotationEffect(.radians(active ? (rock ? w.angle : -w.angle) : 0))
-            .animation(active ? .easeInOut(duration: w.swing).repeatForever(autoreverses: true).delay(w.delay) : .default, value: rock)
-            .offset(y: active && bob ? -w.lift : 0)
-            .animation(active ? .easeInOut(duration: w.bounce).repeatForever(autoreverses: true).delay(w.delay) : .default, value: bob)
-            .onChange(of: active) { _, on in
-                rock = on
-                bob = on
-            }
-            .onAppear {
-                if active {
-                    rock = true
-                    bob = true
-                }
-            }
+        TimelineView(.animation(paused: !active)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            content
+                .rotationEffect(.radians(active ? w.angle(at: t) : 0))
+                .offset(y: active ? -w.lift(at: t) : 0)
+        }
     }
 }
 
