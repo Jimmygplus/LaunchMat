@@ -154,9 +154,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static var versionLine: String {
         let info = Bundle.main.infoDictionary ?? [:]
         var line = "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
-        if let commit = info["LaunchMatCommit"] as? String, !commit.isEmpty { line += " · \(commit)" }
+        if showsCommit, let commit = info["LaunchMatCommit"] as? String, !commit.isEmpty { line += " · \(commit)" }
         return line
     }
+    /// Off for the website's pictures (`--film-take stills`): they show the version as the release does.
+    static var showsCommit = true
 
     @objc func showAbout() {
         controller?.hide()

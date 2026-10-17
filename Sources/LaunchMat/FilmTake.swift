@@ -19,11 +19,11 @@ import SwiftUI
 ///
 /// Shots: open (open the grid, page 2, back), folder (hold Music over Podcasts, name the folder "Listen", close it),
 /// search (wx, clear, vsc, no Return), uninstall (right-click Sketchpad › Move to Trash…, the leftovers list,
-/// Cancel), close (Esc).
+/// Cancel), close (Esc), wiggle, import; stills (the website's pictures, see stillsShot).
 /// Pauses follow the film's pacing: a beat before each action, and a beat after it.
 @MainActor
 enum FilmTake {
-    static let shots = ["open", "folder", "search", "uninstall", "close", "wiggle", "import"]
+    static let shots = ["open", "folder", "search", "uninstall", "close", "wiggle", "import", "stills"]
     /// Not a shot: builds (or reads) the demo layout, prints its pages and exits, showing nothing.
     static let layoutOnly = "layout"
 
@@ -103,6 +103,7 @@ enum FilmTake {
         case "uninstall": uninstallShot()
         case "wiggle": wiggleShot()
         case "import": importShot()
+        case "stills": stillsShot()
         default: closeShot()
         }
         print("film-take \(shot): \(count) actions logged")
@@ -273,6 +274,40 @@ enum FilmTake {
         record("key", text: "option up")
         model.optionHeld = false
         wait(1.5)
+    }
+
+    /// Pictures for the website, of the app's own windows as they are on screen: the grid on page 1, the grid
+    /// searching "vsc", and Settings at each of its five tabs (in the light appearance). For each it prints
+    /// `STILL <name> <window number>` and holds still for 1.2 s, so a script can take the window
+    /// (`screencapture -o -l <number>`); the drawn pointer is a window of its own and isn't in them.
+    private static func stillsShot() {
+        func still(_ name: String, _ window: NSWindow) {
+            print("STILL \(name) \(window.windowNumber)")
+            fflush(stdout)
+            wait(1.2)
+        }
+        Pointer.isHidden = true
+        AppDelegate.showsCommit = false
+        openGrid()
+        still("grid", window)
+        model.query = "vsc"
+        wait(0.8)
+        still("search", window)
+        model.query = ""
+        controller.hide()
+        wait(0.6)
+        let settings = SettingsWindowController(model: model, actions: FilmSettingsActions(pages: []), showGuide: nil)
+        for (tab, name) in [(SettingsWindowController.Tab.general, "general"), (.interface, "interface"), (.apps, "apps"),
+                            (.advanced, "advanced"), (.about, "about")] {
+            settings.show(tab)
+            guard let w = settings.window else { fail("no settings window") }
+            w.appearance = NSAppearance(named: .aqua)
+            w.setFrameOrigin(NSPoint(x: screen.frame.midX - w.frame.width / 2, y: screen.frame.midY - w.frame.height / 2 + 60))
+            wait(0.6)
+            still("settings-\(name)", w)
+        }
+        settings.window?.close()
+        wait(0.3)
     }
 
     /// Settings › Advanced › Import…, the app's own question ("Found 4 pages and 9 folders…"), Import, and the grid in
