@@ -13,10 +13,6 @@ dependencies, no network access and no telemetry.
 
 Release builds are signed with a Developer ID and notarized by Apple. Requires macOS 14 or later; Apple silicon and Intel.
 
-**Coming from LaunchGrid?** LaunchMat is the same app under a new name (0.1.0 was called LaunchGrid). On its first
-launch it copies your pages, folders and settings from LaunchGrid and offers to move the old app to the Trash. If you
-used *Launch at Login*, turn it on again in the LaunchMat menu.
-
 Website: [launchmat.app](https://launchmat.app)
 
 ## Features
@@ -24,7 +20,7 @@ Website: [launchmat.app](https://launchmat.app)
 |---|---|
 | **Open / close** | ⇧⌘Space from anywhere (changeable in the menu), the Dock icon, the menu-bar ▦ icon, a **hot corner**, or a **trackpad pinch** (3 fingers, or thumb + 3 fingers). Esc or a click on empty space closes it |
 | **Launch** | Click, or use the arrow keys + Return |
-| **Search** | Just start typing. Prefix matches rank first, then substrings. Initials work (`vsc` → Visual Studio Code), and so does pinyin for Chinese app names (`wx` / `weixin` → 微信) |
+| **Search** | Just start typing. Prefix matches rank first, then substrings. Initials work (`vsc` → Visual Studio Code) |
 | **Pages** | Two-finger swipe, mouse wheel, click-drag on the background, or the page dots. Grid sizes from 7×5 to 10×6 |
 | **Rearrange** | Drag an icon and the others make room. Hold it at the screen edge to move it to another page |
 | **Folders** | Drop an app onto another app (hold for a moment) to make a folder. Click the title to rename it. Drag an app out to remove it |
@@ -94,15 +90,12 @@ right-hand sides; `build.sh` copies the folder into the app. Keys you leave out 
 **macOS 26 去掉了启动台（Launchpad），LaunchMat 把它找回来。** 它有全屏应用网格、分页、文件夹、拖拽排序和即时搜索，是原生
 Swift 小工具，不联网、不收集任何数据，GPL-3.0 开源免费。
 
-**从 LaunchGrid 升级：** LaunchMat 就是改名后的 LaunchGrid（0.1.0 叫 LaunchGrid）。第一次打开时会自动带上原来的页面、文件夹和设置，
-并询问是否把旧 App 移到废纸篓。如果之前开了“登录时启动”，请在 LaunchMat 菜单里重新打开。
-
 **安装：** 从 [Releases](https://github.com/Jimmygplus/LaunchMat/releases) 下载 DMG，把 LaunchMat 拖进“应用程序”，然后打开。
 可以把它拖进 Dock，点一下就能打开或收起。发布版经过苹果签名和公证，双击就能打开。
 
 **用法：**
 - **打开/收起：** ⇧⌘空格（菜单里可改）、Dock 图标、菜单栏 ▦ 图标、触发角、触控板捏合都可以。Esc 或点空白处关闭。
-- **搜索：** 直接打字，支持首字母（`vsc`），中文名应用支持拼音（`wx` / `weixin` → 微信）。
+- **搜索：** 直接打字，支持首字母（`vsc` → Visual Studio Code）。
 - **整理：** 拖动图标排序，拖到屏幕边缘可以换页。把一个应用拖到另一个上停一下就会生成文件夹。
 - **多选：** ⌘ 点选多个应用，可以一起拖动，也可以右键批量建文件夹或批量隐藏。
 - **卸载：** 按住 ⌥ 图标会抖动，点 ✕ 卸载。卸载前会列出 `~/Library` 里的残留文件，全部移到废纸篓，可以恢复。
