@@ -6,9 +6,12 @@ on:
 
 jobs:
   test:
-    runs-on: macos-15
+    # The app uses the macOS 26 SDK (glassEffect) and Swift 6.2+ (isolated deinit): Xcode 26, which macos-26 has.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
       - name: Unit tests
         run: swift test
       - name: Build app bundle
